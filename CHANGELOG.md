@@ -17,5 +17,8 @@ First version, with Magic: The Gathering and the Pokémon TCG.
 - Undo (a change still waiting to go into the log is simply dropped; names, dice and coins are kept), a log of the match, past matches with their logs, and the match saved after every change. Starting a new match keeps the unfinished one in past matches, without a winner.
 - Magic dialogs turn to any side, with the turn button fixed at the top right corner of the screen.
 - Players' menu: rename, counters, concede. End of match with a winner, a draw or no winner.
-- The device stays awake while the table is open. If it sleeps with the plugin open and the sleep screen shows the book cover, the Matkeeper cover shows instead.
+- The device stays awake while the table is open, and the power button still puts it to sleep. A table left 30 minutes without a touch lets it sleep again. If it sleeps with the plugin open and the sleep screen shows the book cover, the Matkeeper cover shows instead. Nothing is drawn while it sleeps: the clock and a waiting life change catch up when it wakes up.
+- The screen opens in portrait and gives the reader's rotation back on close, also when the opening fails, which shows a warning instead of closing KOReader. A part of the screen that fails to draw shows a message with a way back.
+- The Back key of devices with keys goes back one screen and closes the plugin from home. Gestures the screen does not use no longer reach what is under it.
+- Saves are read part by part, so a damaged part or one from another version is dropped without losing the rest.
 - Interface in Portuguese, English and Spanish.

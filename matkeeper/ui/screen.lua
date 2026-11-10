@@ -1,41 +1,37 @@
-local bit = require("bit")
 local DataStorage = require("datastorage")
 local Device = require("device")
 local InputDialog = require("ui/widget/inputdialog")
 local LuaSettings = require("luasettings")
 local UIManager = require("ui/uimanager")
+local logger = require("logger")
 
-local Awake = require("matkeeper/ui/awake")
+local Awake = require("matkeeper/awake")
 local Blocks = require("matkeeper/ui/blocks")
 local Dialogs = require("matkeeper/ui/dialogs")
 local Draw = require("matkeeper/ui/draw")
 local History = require("matkeeper/history")
 local Layouts = require("matkeeper/layouts")
+local Letters = require("matkeeper/letters")
 local Match = require("matkeeper/match")
 local Pages = require("matkeeper/ui/pages")
+local Portrait = require("matkeeper/portrait")
+local Refresh = require("matkeeper/refresh")
+local Sleep = require("matkeeper/sleep")
+local State = require("matkeeper/state")
 local Surface = require("matkeeper/ui/surface")
 local Text = require("matkeeper/text")
 
-local Device_screen = Device.screen
 local s = Draw.s
 
 local LANGUAGES = { { "pt", "Português" }, { "en", "English" }, { "es", "Español" } }
 local LIFE_COMMIT_SECONDS = 2
--- A full refresh after this many partial ones clears the ghosting of e-ink.
-local FULL_REFRESH_EVERY = 30
+-- Updates without a flash in a row: pages are redrawn whole, the table one small pane at a time.
+local PAGE_REFRESHES = 8
+local TABLE_REFRESHES = 30
+-- A table left without a touch for this long lets the device sleep again, so a forgotten one does not
+-- drain the battery. The next touch holds it awake again.
+local IDLE_SECONDS = 30 * 60
 local COUNTDOWNS = { 30, 40, 50, 60 }
-
--- The first n characters of a UTF-8 string, never cutting one in half.
-local function cut_chars(text, n)
-    local count = 0
-    for pos in text:gmatch("()[^\128-\191]") do
-        count = count + 1
-        if count > n then
-            return text:sub(1, pos - 1)
-        end
-    end
-    return text
-end
 
 -- A list of n entries from a table that may have holes (names never typed are left out).
 local function list_of(source, n)
@@ -57,7 +53,7 @@ end
 
 local function default_language()
     local code = G_reader_settings and G_reader_settings:readSetting("language") or ""
-    local prefix = code:sub(1, 2)
+    local prefix = code:sub(1, 2):lower()
     for _, lang in ipairs(LANGUAGES) do
         if lang[1] == prefix then
             return prefix
@@ -72,37 +68,40 @@ local Screen = Surface:extend{
 }
 
 function Screen:init()
-    local rotation = Device_screen:getRotationMode()
-    if bit.band(rotation, 1) == 1 then
-        self.restore_rotation = rotation
-        Device_screen:setRotationMode(Device_screen.DEVICE_ROTATED_UPRIGHT)
-    end
+    Portrait.open(self, self.setup_screen)
+end
+
+-- Everything the opening does, protected by Portrait.open: if it fails, the rotation is given back.
+function Screen:setup_screen()
     Surface.init(self)
     Draw.init(self.plugin_dir)
-    Awake.recover()
+    if Device:hasKeys() then
+        self.key_events.Back = { { Device.input.group.Back } }
+    end
     self.meta = load_table(self.plugin_dir .. "/_meta.lua")
     self.i18n = load_table(self.plugin_dir .. "/data/i18n.lua")
     self.settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/matkeeper.lua")
     self.history_file = LuaSettings:open(DataStorage:getSettingsDir() .. "/matkeeper_history.lua")
-    self.lang = self.settings:readSetting("lang") or default_language()
-    if not self.i18n[self.lang] then
-        self.lang = "en"
-    end
+    local saved = State.load(function(key)
+        return self.settings:readSetting(key)
+    end, default_language(), logger.warn)
+    self.lang = self.i18n[saved.lang] and saved.lang or "en"
     self:set_language(self.lang)
-    self.match = Match.restore(self.settings:readSetting("match"))
-    if self.match and self.match.finished then
-        self.match = nil
-    end
-    self.last = self.settings:readSetting("last")
-    self.prefs = self.settings:readSetting("layouts") or {}
-    self.custom_rules = Match.custom_rules(self.settings:readSetting("custom"))
-    self.history = History.valid(self.history_file:readSetting("matches"))
-    self.updates = 0
+    self.match = saved.match
+    self.last = saved.last
+    self.prefs = saved.layouts
+    self.custom_rules = saved.custom
+    self.history = State.history(self.history_file:readSetting("matches"))
+    self.page_refresh = Refresh.new(PAGE_REFRESHES)
+    self.table_refresh = Refresh.new(TABLE_REFRESHES)
     self.commit_cb = function()
         self:commit_pending()
     end
     self.clock_cb = function()
         self:tick()
+    end
+    self.idle_cb = function()
+        Awake.set(false)
     end
     self:show_home()
 end
@@ -130,19 +129,27 @@ function Screen:names()
     return names
 end
 
--- Partial refreshes, with a full one now and then.
-function Screen:update(pane, mode)
-    self.updates = self.updates + 1
-    if self.updates >= FULL_REFRESH_EVERY and not mode then
-        self.updates = 0
-        return Surface.update(self, nil, "full")
+-- The kind of what is on screen picks the mode: a new page or the table opening flash once, changes
+-- inside them do not, and a flash comes after PAGE_REFRESHES (pages) or TABLE_REFRESHES (table panes).
+-- Pages and the table count apart; moving from one to the other starts the count again.
+function Screen:refresh_mode()
+    local counter = self.kind == "table" and self.table_refresh or self.page_refresh
+    if counter ~= self.last_counter then
+        counter:reset()
+        self.last_counter = counter
     end
-    return Surface.update(self, pane, mode)
+    return counter:mode(self.kind)
 end
 
-function Screen:page(view, mode)
+-- The next refresh flashes, whatever is on screen: after waking up and after a milestone.
+function Screen:reset_refresh()
+    self.page_refresh:reset()
+    self.table_refresh:reset()
+end
+
+function Screen:page(view)
     self:leave_table()
-    self:set_panes({ { x = 0, y = 0, w = self.dimen.w, h = self.dimen.h, seat = "bottom", view = view } }, mode or "ui")
+    self:set_panes({ { x = 0, y = 0, w = self.dimen.w, h = self.dimen.h, seat = "bottom", view = view } }, self.mode)
 end
 
 ---------------------------------------------------------------------------
@@ -158,12 +165,12 @@ function Screen:show_home()
         saved = self.match,
         last = self.last,
         on_close = function() UIManager:close(self) end,
-        on_continue = function() self:show_table("full") end,
+        on_continue = function() self:show_table() end,
         on_new = function() self:start_setup() end,
         on_repeat = function() self:repeat_last() end,
         on_history = function() self:show_history(1) end,
         on_settings = function() self:show_settings() end,
-    }, "full")
+    })
 end
 
 function Screen:show_settings()
@@ -199,6 +206,7 @@ end
 -- summary: a history item, or the match being played. back: where the back button goes.
 function Screen:show_log(summary, back, page)
     self.mode = "log"
+    self.log_back = back
     local names = summary.players
     local subtitle = {}
     subtitle[#subtitle + 1] = self.text:when(summary.started, os.time())
@@ -506,7 +514,7 @@ function Screen:show_seats(number, total)
         end
     end
     self:leave_table()
-    self:set_panes(panes, "ui")
+    self:set_panes(panes, self.mode)
 end
 
 function Screen:ask_name(current, on_done)
@@ -523,7 +531,7 @@ function Screen:ask_name(current, on_done)
                     local value = (dialog:getInputText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
                     UIManager:close(dialog)
                     if value ~= "" then
-                        on_done(cut_chars(value, 24))
+                        on_done(Letters.cut(Letters.nfc(value), 24))
                     end
                 end,
             },
@@ -569,12 +577,12 @@ function Screen:begin_match(draw)
             self.roll.values[r.p] = r.v
         end
         self:save()
-        self:show_table("full")
+        self:show_table()
     elseif draw then
-        self:show_table("full")
+        self:show_table()
         self:open_coin_call()
     else
-        self:show_table("full")
+        self:show_table()
     end
 end
 
@@ -585,7 +593,8 @@ end
 function Screen:leave_table()
     if self.mode_table then
         self:commit_pending()
-        UIManager:unschedule(self.clock_cb)
+        Sleep.unschedule(self, self.clock_cb)
+        Sleep.unschedule(self, self.idle_cb)
         Awake.set(false)
         self.mode_table = false
         -- Time away from the table is not play time; a pause chosen by the players stays.
@@ -642,7 +651,7 @@ local function hub_point(layout, cells, w, h)
     return best[1], best[2]
 end
 
-function Screen:show_table(mode)
+function Screen:show_table()
     local match = self.match
     if not match then
         return self:show_home()
@@ -654,7 +663,7 @@ function Screen:show_table(mode)
         match.clock.away = nil
         match:set_paused(false)
     end
-    Awake.set(true)
+    self:touched()
     local w, h = self.dimen.w, self.dimen.h
     local layout = Layouts.decode(match.layout) or Layouts.for_players(#match.players, w, h)[1]
     local margin, gap = s(8), s(8)
@@ -725,9 +734,16 @@ function Screen:show_table(mode)
         }
         panes[#panes + 1] = pane
     end
-    self:set_panes(panes, mode or "ui")
-    UIManager:unschedule(self.clock_cb)
-    UIManager:scheduleIn(60, self.clock_cb)
+    self:set_panes(panes, "table")
+    Sleep.schedule(self, 60, self.clock_cb)
+end
+
+-- Every touch at the table holds the device awake for another IDLE_SECONDS.
+function Screen:touched()
+    if self.mode_table then
+        Awake.set(true)
+        Sleep.schedule(self, IDLE_SECONDS, self.idle_cb)
+    end
 end
 
 function Screen:block_view(i)
@@ -800,13 +816,12 @@ function Screen:bump_life(i, delta)
     end
     self.pending_player = i
     self.pending = (self.pending or 0) + delta
-    UIManager:unschedule(self.commit_cb)
-    UIManager:scheduleIn(LIFE_COMMIT_SECONDS, self.commit_cb)
+    Sleep.schedule(self, LIFE_COMMIT_SECONDS, self.commit_cb)
     self:update_block(i)
 end
 
 function Screen:commit_pending()
-    UIManager:unschedule(self.commit_cb)
+    Sleep.unschedule(self, self.commit_cb)
     local i, delta = self.pending_player, self.pending or 0
     self.pending_player, self.pending = nil, 0
     if i and delta ~= 0 and self.match then
@@ -830,7 +845,7 @@ function Screen:undo()
     -- A change still waiting to go into the log is simply dropped.
     if self.pending_player and (self.pending or 0) ~= 0 then
         local i = self.pending_player
-        UIManager:unschedule(self.commit_cb)
+        Sleep.unschedule(self, self.commit_cb)
         self.pending_player, self.pending = nil, 0
         self:update_block(i)
         return
@@ -845,10 +860,11 @@ function Screen:tick()
     if self.mode ~= "table" then
         return
     end
+    -- Outside the refresh count: the minute clock never brings a flash by itself.
     for _, pane in ipairs(self.clock_panes or {}) do
         Surface.update(self, pane, "ui")
     end
-    UIManager:scheduleIn(60, self.clock_cb)
+    Sleep.schedule(self, 60, self.clock_cb)
 end
 
 -- Magic defeats: with more than two players left, the player is out and the match goes on; with
@@ -954,7 +970,7 @@ function Screen:open_menu(page)
     rows[#rows + 1] = { label = t.history_short, icon = "menu", on_tap = function()
         self:close_dialog()
         local summary = match:summary()
-        self:show_log(summary, function() self:show_table("full") end)
+        self:show_log(summary, function() self:show_table() end)
     end }
     rows[#rows + 1] = { kind = "separator" }
     rows[#rows + 1] = { label = t.end_match, on_tap = function() self:open_end(nil) end }
@@ -1401,8 +1417,59 @@ end
 -- Life cycle
 ---------------------------------------------------------------------------
 
-function Screen:onSetRotationMode()
+Screen.onSetRotationMode = Portrait.ignore_rotation
+
+-- A pane that failed to draw: a short message and a way back, so the screen never locks.
+function Screen:paint_failed(ctx)
+    local t = self.t or {}
+    local face = Draw.face("bold", s(18))
+    local small = Draw.face("sans", s(16))
+    local mid = math.floor(ctx.h / 2)
+    Draw.text(ctx.bb, t.draw_failed or "This part could not be shown.", face, s(12), mid - s(40), ctx.w - s(24), s(36), "center", Draw.BLACK)
+    Draw.text(ctx.bb, t.draw_failed_back or "Tap here to go back.", small, s(12), mid, ctx.w - s(24), s(36), "center", Draw.DARK)
+    ctx:hit(0, 0, ctx.w, ctx.h, function()
+        if self.mode == "home" and not self.modal then
+            UIManager:close(self)
+        else
+            self:close_dialog()
+            self:show_home()
+        end
+    end)
+end
+
+function Screen:dispatch(ges, kind)
+    self:touched()
+    return Surface.dispatch(self, ges, kind)
+end
+
+-- The Back key of devices with keys goes back one screen, and closes the plugin from home.
+function Screen:onBack()
+    if self.modal then
+        if self.modal.on_outside then
+            self.modal.on_outside()
+        end
+    elseif self.mode == "setup" then
+        self:setup_back()
+    elseif self.mode == "log" and self.log_back then
+        self.log_back()
+    elseif self.mode == "home" then
+        UIManager:close(self)
+    else
+        self:show_home()
+    end
     return true
+end
+
+-- KOReader sends Close to every window before it quits (USB mode on a Kobo, closing the window on a computer).
+function Screen:onClose(arg)
+    if not (arg and arg.keep_screensaver) then
+        UIManager:close(self)
+    end
+end
+
+function Screen:onResume()
+    self:reset_refresh()
+    self:touched()
 end
 
 function Screen:onCloseWidget()
@@ -1410,9 +1477,7 @@ function Screen:onCloseWidget()
     self:save()
     Surface.onCloseWidget(self)
     Draw.free()
-    if self.restore_rotation then
-        Device_screen:setRotationMode(self.restore_rotation)
-    end
+    Portrait.close(self)
     UIManager:setDirty(nil, "full")
 end
 

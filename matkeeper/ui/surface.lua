@@ -3,10 +3,11 @@ local Device = require("device")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
 local InputContainer = require("ui/widget/container/inputcontainer")
-local UIManager = require("ui/uimanager")
+local logger = require("logger")
 
 local Draw = require("matkeeper/ui/draw")
 local Layouts = require("matkeeper/layouts")
+local Sleep = require("matkeeper/sleep")
 
 local Screen = Device.screen
 
@@ -16,10 +17,12 @@ local Screen = Device.screen
 -- same at any rotation. A modal pane can sit on top, with the rest of the screen darkened.
 --
 -- A view is a table with draw(view, ctx), where ctx.bb is the buffer, ctx.w and ctx.h its size as
--- the owner sees it, and ctx:hit(x, y, w, h, tap, hold) marks a touch area.
+-- the owner sees it, and ctx:hit(x, y, w, h, tap, hold) marks a touch area. A view that fails to
+-- draw leaves its pane to paint_failed, so the rest of the screen still works.
 local Surface = InputContainer:extend{
     name = "matkeeper_surface",
     covers_fullscreen = true,
+    stop_events_propagation = true,
     background = nil,
 }
 
@@ -37,6 +40,7 @@ function Surface:init()
     self.panes = {}
     self.modal = nil
     self.background = self.background or Draw.INK
+    Sleep.watch(self)
     self.ges_events = {
         Tap = { GestureRange:new{ ges = "tap", range = self.dimen } },
         Hold = { GestureRange:new{ ges = "hold", range = self.dimen } },
@@ -47,9 +51,21 @@ function Surface:getSize()
     return self.dimen
 end
 
+-- Runs the view of a pane; if it fails, the pane is cleared and handed to paint_failed instead, so an
+-- error does not come back on every paint and lock the screen.
+local function draw_view(surface, pane, ctx)
+    local ok, err = pcall(pane.view.draw, pane.view, ctx)
+    if not ok then
+        logger.warn("matkeeper: could not draw a pane", err)
+        ctx.hits = {}
+        ctx.bb:paintRect(0, 0, ctx.w, ctx.h, Draw.WHITE)
+        pcall(surface.paint_failed, surface, ctx)
+    end
+end
+
 -- Draws a pane into a buffer of its own. A base buffer (a copy of what is under the pane) makes it
 -- transparent: the view draws over the screen instead of over a blank rectangle.
-local function render(pane, base)
+local function render(surface, pane, base)
     local seat = pane.seat or "bottom"
     if pane.bb then
         pane.bb:free()
@@ -61,22 +77,33 @@ local function render(pane, base)
         bb:paintRect(0, 0, lw, lh, pane.fill)
     end
     local ctx = setmetatable({ bb = bb, w = lw, h = lh, hits = {}, pane = pane }, Context)
-    pane.view:draw(ctx)
+    draw_view(surface, pane, ctx)
     bb:rotateAbsolute(0)
     pane.bb = bb
     pane.hits = ctx.hits
     pane.dirty = false
 end
 
--- panes: { { x, y, w, h, seat, view, fill } }. Replaces everything (and closes the modal).
-function Surface:set_panes(panes, refresh)
+-- panes: { { x, y, w, h, seat, view, fill } }. Replaces everything (and closes the modal). kind names
+-- what the panes show (a page, the table), for refresh_mode.
+function Surface:set_panes(panes, kind)
     self:free_panes()
     self.panes = panes
     for _, pane in ipairs(panes) do
         pane.dirty = true
     end
     self.modal = nil
-    self:refresh(nil, refresh or "ui")
+    self.kind = kind
+    self:refresh(nil)
+end
+
+-- For a failed pane: ctx is cleared to white, with no touch areas. The screen draws its message here.
+function Surface:paint_failed(ctx)
+end
+
+-- The refresh mode of a change when the caller does not name one. The screen counts them.
+function Surface:refresh_mode()
+    return "ui"
 end
 
 function Surface:free_panes()
@@ -96,7 +123,7 @@ end
 function Surface:update(pane, mode)
     if pane then
         pane.dirty = true
-        self:refresh(pane, mode or "ui")
+        self:refresh(pane, mode)
     else
         for _, p in ipairs(self.panes) do
             p.dirty = true
@@ -104,14 +131,17 @@ function Surface:update(pane, mode)
         if self.modal then
             self.modal.dirty = true
         end
-        self:refresh(nil, mode or "ui")
+        self:refresh(nil, mode)
     end
 end
 
+-- A full refresh always takes the whole screen, so the ghosting of the rest goes too. Nothing is
+-- refreshed while the device sleeps: the window is repainted when it wakes up.
 function Surface:refresh(pane, mode)
-    local region = pane and Geom:new{ x = pane.x, y = pane.y, w = pane.w, h = pane.h } or self.dimen
-    UIManager:setDirty(self, function()
-        return mode or "ui", region
+    mode = mode or self:refresh_mode()
+    local region = pane and mode ~= "full" and Geom:new{ x = pane.x, y = pane.y, w = pane.w, h = pane.h } or self.dimen
+    Sleep.dirty(self, function()
+        return mode, region
     end)
 end
 
@@ -121,7 +151,7 @@ function Surface:show_modal(view, seat, on_outside)
         self.modal.bb:free()
     end
     self.modal = { x = 0, y = 0, w = self.dimen.w, h = self.dimen.h, seat = seat or "bottom", view = view, dirty = true, on_outside = on_outside, transparent = true }
-    self:refresh(nil, "ui")
+    self:refresh(nil)
 end
 
 function Surface:close_modal()
@@ -130,7 +160,7 @@ function Surface:close_modal()
             self.modal.bb:free()
         end
         self.modal = nil
-        self:refresh(nil, "ui")
+        self:refresh(nil)
     end
 end
 
@@ -141,9 +171,9 @@ function Surface:paintTo(bb, x, y)
         if pane.transparent then
             local base = Blitbuffer.new(pane.w, pane.h, bb:getType())
             base:blitFrom(bb, 0, 0, x + pane.x, y + pane.y, pane.w, pane.h)
-            render(pane, base)
+            render(self, pane, base)
         elseif pane.dirty or not pane.bb then
-            render(pane)
+            render(self, pane)
         end
         bb:blitFrom(pane.bb, x + pane.x, y + pane.y, 0, 0, pane.w, pane.h)
     end
@@ -158,7 +188,7 @@ function Surface:paintTo(bb, x, y)
             copy:blitFrom(bb, 0, 0, x, y, modal.w, modal.h)
             copy:rotateAbsolute(DEGREES[seat])
             local ctx = setmetatable({ bb = copy, w = copy:getWidth(), h = copy:getHeight(), hits = {}, pane = modal }, Context)
-            modal.view:draw(ctx)
+            draw_view(self, modal, ctx)
             copy:rotateAbsolute(0)
             if modal.bb then
                 modal.bb:free()

@@ -29,9 +29,9 @@ Damage, prizes and the Bench are not tracked on purpose: they stay on the physic
 | `ui/blocks.lua` | The Magic block, the Pokémon turn panel, the bar, the round menu button and the controls cell. |
 | `ui/dialogs.lua` | Modal views: lists, keypad, dice, coins, Checkup, the coin call. |
 | `ui/pages.lua` | Home, setup steps, past matches, a log and settings. |
-| `ui/screen.lua` | The flow: setup, the table, dialogs, saving, the clock and the awake state. |
-| `ui/awake.lua` | Keeps the device awake while the table is open, and recovers if the plugin closes in the middle. |
-| `screensaver.lua` | The plugin cover on the sleep screen (see below). |
+| `ui/screen.lua` | The flow: setup, the table, dialogs, saving, the clock, the awake state and the Back key. |
+| `state.lua` | Reads the settings file back, part by part (see Saving). |
+| `screensaver.lua`, `portrait.lua`, `refresh.lua`, `awake.lua`, `sleep.lua`, `letters.lua`, `saved_state.lua` | Modules shared by the plugins of the project, copied unchanged: the cover on the sleep screen, portrait while open, the refresh count, the awake state, nothing drawn while asleep, cutting names without breaking a letter, and reading older saves. |
 
 ## Drawing at any rotation
 
@@ -41,7 +41,11 @@ Touches go the other way: `Layouts.to_local` turns a point inside a pane into th
 
 The round menu button is a transparent pane: it draws over a copy of what is under it, so it can sit on the junction of the blocks. Dialogs are a modal pane over the darkened screen, facing the player of the turn in Pokémon and a chosen side in Magic (a round button turns them; it sits at the top right corner of the screen whatever the side, so it can be tapped again in the same place, and dialogs that have it keep that corner clear). On the seats step the turn button of each block sits at its center, the one point that does not move when the block turns. The Pokémon panel is drawn only for a block wider than tall, so its blocks turn only between the two seats that see them that way (`Layouts.wide_seats`).
 
-Each pane keeps its buffer until it changes, so a tap redraws one block and refreshes only its rectangle. A full refresh every 30 partial ones clears the e-ink ghosting.
+Each pane keeps its buffer until it changes, so a tap redraws one block and refreshes only its rectangle with a `ui` refresh, which does not flash. `refresh.lua` counts them by what is on screen: a new page or the table opening flashes once (`full`), changes inside a page or the table do not, and a flash of the whole screen comes after 8 changes in a row on the pages (redrawn whole) or 30 pane refreshes at the table. The minute clock stays out of the count. After waking up, the next refresh flashes.
+
+A pane whose view fails to draw does not lock the screen: the error goes to the log, and the pane shows a short message that leads back to home (or closes the plugin from home). The rest of the table keeps working.
+
+The screen opens in portrait and ignores rotation while open (`portrait.lua`), giving the reader's rotation back on close, also when the opening fails; the blocks turn inside the portrait screen. The menu opens the screen protected, and a failed opening shows a warning in the reader's language. The Back key of devices with keys closes a dialog, goes back one setup step, leaves the table for home (the match stays) and closes the plugin from home.
 
 ## Layouts
 
@@ -59,7 +63,15 @@ Suggested seats: cells in a band of two face the sides when there are three or m
 
 `koreader/settings/matkeeper.lua` keeps the language, the current match (serialized after every change), the last setup and the layout and seats chosen for each game and player count. `koreader/settings/matkeeper_history.lua` keeps up to 30 finished matches with their logs, written only when a match ends.
 
+`state.lua` reads every part on its own, so a part that cannot be read drops only itself: the language from a closed list, the last setup and the saved layouts only while their game, format, layout and seats still exist, the custom rules clamped, and the match through `Match.restore`, protected, which checks the type of each part, gives missing fields their defaults (a player saved before a field existed) and drops a match with a hole in the players or a format that left. A finished match never comes back. `tests/saves/` keeps files written by earlier versions, which `tests/state_spec.lua` and `check_layout.lua` open.
+
 Undo keeps up to 60 snapshots of the players, the turn and the table states, without the clock (undoing must not turn time back) and without the log (it is cut back to its old length, keeping dice and coin results, which undo does not take back). Renaming a player and the last coin are kept too. Checkup coins are kept per turn outside the snapshots, so undoing or reopening the Checkup never flips a coin twice.
+
+## Awake on the table
+
+While the table is open the device stays awake (`awake.lua`): KOReader's auto suspend is paused and, on a Kindle, the idle timer of the system is reset every 4 minutes, as a touch would. powerd's `preventScreenSaver` is not used, so the power button still puts the device to sleep and a crash leaves nothing behind. Every touch at the table holds it for another 30 minutes; a table left without a touch for that long lets the device sleep again, and the next touch holds it once more. While charging the timer is not reset, as KOReader also does, so a table left 10 minutes without a touch on the charger can still go to sleep.
+
+While the device sleeps the screen draws nothing and its timers wait (`sleep.lua`): the minute clock, the life change waiting to go into the log and the idle limit run once when it wakes up, and the screen is repainted then.
 
 ## Sleep screen
 
@@ -67,10 +79,16 @@ If the device sleeps with the plugin open (the table keeps it awake, so this hap
 
 ## Tools
 
-- `tools/validate_i18n.lua`: the three languages have the same keys and format markers, and no dashes.
+- `tools/check.sh`: every check that runs without KOReader, the same on a computer and in the CI: the tests, the texts and the package.
+- `tools/check_texts.lua "t:matkeeper/ui"`: the three languages have the same keys and format markers, no dashes and no brand of e-reader, and every key the screens read exists.
 - `tests/table_spec.lua`: layouts, touch conversion, the rules of both games, undo, the clock, saving, the history and the log in every language.
+- `tests/state_spec.lua`: the saves of earlier versions, a match round trip, content that left, a damaged save and fields missing from an older one.
 - `tools/koreader/render_screens.lua`: opens the real screens in a headless KOReader, saves each as a PNG and checks the rotated touches.
-- `tools/koreader/fuzz_ui.lua`: random taps and holds on home, setup and every layout of both games in the three languages.
+- `tools/koreader/check_layout.lua`, run in four screen sizes by `tools/koreader/check_all_sizes.sh`: every page, table and dialog in the three languages, touch areas inside their pane, interface texts that do not fit, the version on the settings page, a match resumed by a new screen (also one saved by 0.1.0), the refresh modes, the Back key and a pane that fails to draw.
+- `tools/koreader/fuzz_ui.lua`, with `tools/koreader/fuzz.lua`: random taps, holds and swipes on home, setup and every layout of both games in the three languages, each run from nothing saved; it prints how to repeat each error (`SEED`, `ACTIONS`, `ONLY`).
 - `tools/koreader/check_screensaver.lua`: checks when the cover replaces the sleep screen image (plugin on top, a dialog over it, another full-screen window, power off, other modes, after closing) and saves the resulting screen.
+- `tools/koreader/check_rotation.lua` (cases in `rotation_cases.lua`), `check_awake.lua` and `check_sleep.lua` (cases in `sleep_cases.lua`, the table with its timers running): portrait, the awake state and nothing drawn while asleep.
 - `tools/make_assets.py`: draws the icon masks, coins, dice, the banner, the header and the sleep screen cover with Pillow, and reduces the logos to the screen's 16 grays.
-- `tools/package.sh`: builds `dist/matkeeper.koplugin.zip` and its checksum.
+- `tools/package.sh`, with `tools/package_lib.sh`: builds `dist/matkeeper.koplugin.zip` and its checksum, the same zip byte for byte on any machine, and checks that every file the code loads is in it.
+
+The emulator checks run from the plugin folder with `KOREADER_DIR` pointing at the desktop KOReader, as `tools/koreader/run_headless.sh tools/koreader/<check>.lua`, before each release and after changing the screens. The CI does not have KOReader.

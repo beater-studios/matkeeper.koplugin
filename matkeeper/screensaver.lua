@@ -1,4 +1,4 @@
--- Pattern "screensaver" (docs/patterns/screensaver in the kindle project). This file is copied
+-- Pattern "screensaver". This file is copied
 -- unchanged into every plugin as <id>/screensaver.lua: change the pattern first, then copy it again.
 local Screensaver = require("ui/screensaver")
 local UIManager = require("ui/uimanager")

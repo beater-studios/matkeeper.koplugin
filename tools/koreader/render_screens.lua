@@ -18,6 +18,8 @@ UIManager:init()
 local Geom = require("ui/geometry")
 local Rng = require("matkeeper/rng")
 local Screen = require("matkeeper/ui/screen")
+-- main.lua does this when KOReader loads the plugin.
+require("matkeeper/awake").install("matkeeper")
 
 local screen = Screen:new{ plugin_dir = plugin_dir }
 UIManager:show(screen)

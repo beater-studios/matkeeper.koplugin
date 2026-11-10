@@ -29,6 +29,7 @@ O leitor fica deitado na mesa por horas com bateria sobrando, não reflete a luz
 - **Relógio em minutos:** tempo da partida, tempo de rodada e contador de turnos, atualizados uma vez por minuto para poupar a bateria.
 - **Desfazer, registro e partidas anteriores:** toda mudança pode ser desfeita, a partida é salva a cada uma, e as partidas terminadas guardam o registro para ler depois.
 - **Feito para e-ink:** números grandes, toques nas metades do bloco (esquerda tira, direita soma, segurar muda 10) e só o bloco que mudou é redesenhado.
+- **Acordado na mesa:** o aparelho fica acordado com a mesa aberta, e o botão de ligar continua fazendo ele dormir. Uma mesa esquecida por 30 minutos sem toque deixa o aparelho dormir de novo. Dormindo com o plugin aberto, a tela de descanso mostra a capa do Matkeeper no lugar da capa do livro.
 - **Três idiomas:** português, inglês e espanhol. Sem internet e sem coleta de dados.
 
 ## Instalação
@@ -37,7 +38,7 @@ O leitor fica deitado na mesa por horas com bateria sobrando, não reflete a luz
 2. Descompacte na pasta `plugins` do KOReader, para ficar `koreader/plugins/matkeeper.koplugin/`.
 3. Reinicie o KOReader. O plugin fica em **Ferramentas > Matkeeper**.
 
-A partida atual e as preferências ficam em `koreader/settings/matkeeper.lua`, e as partidas anteriores em `koreader/settings/matkeeper_history.lua`.
+A partida atual e as preferências ficam em `koreader/settings/matkeeper.lua`, e as partidas anteriores em `koreader/settings/matkeeper_history.lua`. Para desinstalar, apague a pasta do plugin e esses dois arquivos.
 
 ## Como usar
 

@@ -1,9 +1,10 @@
--- Pattern "screensaver" (docs/patterns/screensaver in the kindle project). This file is copied
+-- Pattern "screensaver". This file is copied
 -- unchanged into every plugin as tools/koreader/check_screensaver.lua: change the pattern first.
 --
 -- Checks when the plugin cover replaces the sleep screen image and saves the resulting screen.
 -- The plugin id is the folder that holds screensaver.lua; its full-screen windows are found by
--- looking for "covers_fullscreen = true" in its code, and each one must be named <id>_*.
+-- looking for "covers_fullscreen = true" in its code, and each one must be named <id>_* and have
+-- stop_events_propagation, so no gesture reaches what is under the plugin.
 -- Usage: OUTPUT_DIR=<folder> KOREADER_DIR=<desktop KOReader> tools/koreader/run_headless.sh tools/koreader/check_screensaver.lua
 local plugin_dir = assert(os.getenv("PLUGIN_DIR"))
 local out_dir = assert(os.getenv("OUTPUT_DIR"))
@@ -80,8 +81,12 @@ table.sort(screen_modules)
 report(#screen_modules > 0, "full-screen windows found", table.concat(screen_modules, ", "))
 
 local PluginScreensaver = require(id .. "/screensaver")
+local setup_before = Screensaver.setup
 PluginScreensaver.install(plugin_dir, id)
+local setup_wrapped = Screensaver.setup
 PluginScreensaver.install(plugin_dir, id)
+report(setup_wrapped ~= setup_before and Screensaver.setup == setup_wrapped
+    and Screensaver["_" .. id .. "_original_setup"] == setup_before, "install wraps setup once", "installed twice")
 
 local plugin_image = plugin_dir .. "/assets/screensaver.png"
 local default_image = "resources/koreader.png"
@@ -99,10 +104,17 @@ end
 -- accounts, data or network.
 local stand_ins = {}
 for _, module in ipairs(screen_modules) do
-    local class = require(module)
-    if type(class) == "table" and class.covers_fullscreen then
+    local loaded, class = pcall(require, module)
+    if not loaded then
+        report(false, "load " .. module, (tostring(class):match("^[^\n]*")))
+    elseif type(class) ~= "table" or not class.covers_fullscreen then
+        report(false, "full-screen flag of " .. module, "the file sets covers_fullscreen = true but the module's table"
+            .. " does not have it: declare covers_fullscreen, name and stop_events_propagation on the window class")
+    else
         local named = type(class.name) == "string" and class.name:sub(1, #prefix) == prefix
         report(named, "window name of " .. module, tostring(class.name) .. " (must start with " .. prefix .. ")")
+        report(class.stop_events_propagation == true, "gestures stop at " .. module,
+            "stop_events_propagation = " .. tostring(class.stop_events_propagation) .. " (must be true)")
         stand_ins[#stand_ins + 1] = InputContainer:new{ name = class.name, covers_fullscreen = true }
     end
 end

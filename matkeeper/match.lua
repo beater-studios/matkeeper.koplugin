@@ -3,6 +3,7 @@
 local Magic = require("matkeeper/games/magic")
 local Pokemon = require("matkeeper/games/pokemon")
 local Rng = require("matkeeper/rng")
+local SavedState = require("matkeeper/saved_state")
 
 local Match = {}
 Match.__index = Match
@@ -711,15 +712,70 @@ function Match:serialize()
     }
 end
 
+-- What every player has, for players saved before a field existed.
+local function player_defaults()
+    return {
+        name = "", seat = "bottom", counters = {}, damage = {}, commanders = 1, casts = { 0, 0 }, out = false,
+        conditions = {}, poison = Pokemon.poison_damage, reminders = {},
+    }
+end
+
+local SEATS = { bottom = true, left = true, top = true, right = true }
+
+-- Every part is checked before use: a part of the wrong type drops the whole match (nil), and a field
+-- missing from an older save gets its default.
 function Match.restore(data, rng, now)
-    if type(data) ~= "table" or data.version ~= Match.VERSION or not Match.format(data.game, data.format) then
+    if not SavedState.is_version(data, Match.VERSION) or not Match.format(data.game, data.format) then
         return nil
     end
-    local self = setmetatable(copy(data), Match)
+    local format = Match.format(data.game, data.format)
+    if type(data.players) ~= "table" or type(data.clock) ~= "table" or type(data.log) ~= "table" then
+        return nil
+    end
+    -- A hole in the players drops the match: ipairs and # would stop at it.
+    local players = SavedState.list(data.players)
+    local count = table.maxn(players)
+    if count < format.min or count > format.max then
+        return nil
+    end
+    local score = Match.GAMES[data.game].kind == "score"
+    for i = 1, count do
+        local p = players[i]
+        if type(p) ~= "table" or type(p.name) ~= "string" or not SEATS[p.seat] then
+            return nil
+        end
+        if score and type(p.life) ~= "number" then
+            return nil
+        end
+        players[i] = SavedState.with_defaults(p, player_defaults())
+    end
+    local self = setmetatable(SavedState.copy(data), Match)
+    self.players = players
     self.rng = rng or Rng.fresh()
     self.now = now or os.time
+    local at = self.now()
+    self.clock = SavedState.with_defaults(data.clock, { started = at, since = at, total = 0, paused = true })
+    self.turn = type(data.turn) == "number" and data.turn or 1
+    if self:kind() == "turn" then
+        self.current = players[data.current] and data.current or 1
+    else
+        self.current = nil
+    end
+    self.starter = players[data.starter] and data.starter or nil
+    self.states = type(data.states) == "table" and self.states or {}
+    self.flips = SavedState.with_defaults(data.flips, { turn = 0, results = {} })
+    local log, saved_log = {}, SavedState.list(data.log)
+    for i = 1, table.maxn(saved_log) do
+        local entry = saved_log[i]
+        if type(entry) == "table" and type(entry.k) == "string" then
+            log[#log + 1] = entry
+        end
+    end
+    self.log = log
+    if format.custom then
+        self.custom = Match.custom_rules(self.custom)
+    end
     self.undo_stack = {}
-    self.flips = self.flips or { turn = 0, results = {} }
     return self
 end
 

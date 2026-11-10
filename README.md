@@ -38,6 +38,7 @@ The e-reader lies on the table for hours with battery to spare, does not reflect
 - **A clock in minutes:** the match time, a round countdown and the turn count, updated once a minute to spare the battery.
 - **Undo, a log and past matches:** every change can be undone, the match is saved after each one, and finished matches keep their log to read later.
 - **Made for e-ink:** big numbers, taps on halves of the block (left takes, right gives, a hold moves 10), a few taps between changes before they are logged, and only the block that changed is redrawn.
+- **Awake on the table:** the device stays awake while the table is open, and the power button still puts it to sleep. A table left 30 minutes without a touch lets the device sleep again. Asleep with the plugin open, the sleep screen shows the Matkeeper cover instead of the book cover.
 - **Three languages:** Portuguese, English and Spanish. No internet and no data collected.
 
 ## Installation
@@ -46,7 +47,7 @@ The e-reader lies on the table for hours with battery to spare, does not reflect
 2. Unzip it into the `plugins` folder of KOReader, so you get `koreader/plugins/matkeeper.koplugin/`.
 3. Restart KOReader. The plugin is in **Tools > Matkeeper**.
 
-The checksum of each release is in `matkeeper.koplugin.zip.sha256`. The current match and your preferences live in `koreader/settings/matkeeper.lua`, and past matches in `koreader/settings/matkeeper_history.lua`.
+The checksum of each release is in `matkeeper.koplugin.zip.sha256`. The current match and your preferences live in `koreader/settings/matkeeper.lua`, and past matches in `koreader/settings/matkeeper_history.lua`. To uninstall, delete the plugin folder and these two files.
 
 ## How to use
 
@@ -59,17 +60,19 @@ The checksum of each release is in `matkeeper.koplugin.zip.sha256`. The current 
 ## Development
 
 ```sh
-luajit tools/validate_i18n.lua   # the three languages have the same texts
-luajit tests/table_spec.lua      # rules, layouts, undo, saving and the log
+sh tools/check.sh   # tests, texts and the package, as the CI runs them
 ```
 
 With the official KOReader for desktop, `KOREADER_DIR` pointing at the folder with `luajit` and `reader.lua`:
 
 ```sh
-tools/koreader/run_emulator.sh                                   # opens KOReader with the plugin, 600 x 800
-OUTPUT_DIR=/tmp/shots tools/koreader/run_headless.sh tools/koreader/render_screens.lua
-tools/koreader/run_headless.sh tools/koreader/fuzz_ui.lua         # random taps on every layout
+tools/koreader/run_emulator.sh                                    # opens KOReader with the plugin, 600 x 800
+tools/koreader/check_all_sizes.sh                                 # every screen in four screen sizes
+tools/koreader/run_headless.sh tools/koreader/fuzz_ui.lua         # random touches on every layout
+OUTPUT_DIR=shots tools/koreader/run_headless.sh tools/koreader/render_screens.lua
 ```
+
+The other checks (`check_screensaver.lua`, `check_rotation.lua`, `check_awake.lua`, `check_sleep.lua`) run the same way and are listed in [docs/design.md](docs/design.md).
 
 The images in `assets/` come from `tools/make_assets.py` (Pillow). How the code is organized and why is in [docs/design.md](docs/design.md).
 
