@@ -1,11 +1,24 @@
 <p align="center">
+  <img src="docs/brand/banner.png" alt="Matkeeper: um contador de mesa para jogos de cartas colecionáveis">
+</p>
+
+<p align="center">
   <strong>Um contador de mesa para jogos de cartas colecionáveis no KOReader, feito para e-ink. Em português, inglês e espanhol.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/beater-studios/matkeeper.koplugin/releases/latest"><img src="https://img.shields.io/github/v/release/beater-studios/matkeeper.koplugin?style=flat-square&color=111111&label=release" alt="Última release"></a>
+  <a href="https://github.com/beater-studios/matkeeper.koplugin/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/beater-studios/matkeeper.koplugin/ci.yml?branch=main&style=flat-square&label=tests" alt="Testes"></a>
+  <a href="https://koreader.rocks"><img src="https://img.shields.io/badge/KOReader-2026.07-111111?style=flat-square" alt="Feito para o KOReader 2026.07"></a>
+  <img src="https://img.shields.io/badge/languages-EN%20%C2%B7%20PT%20%C2%B7%20ES-111111?style=flat-square" alt="Inglês, português e espanhol">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-111111?style=flat-square" alt="Licença: GPL-3.0"></a>
 </p>
 
 <p align="center">
   <a href="#o-que-faz">O que faz</a> ·
   <a href="#instalação">Instalação</a> ·
   <a href="#como-usar">Como usar</a> ·
+  <a href="#desenvolvimento">Desenvolvimento</a> ·
   <a href="README.md">Read in English</a>
 </p>
 
@@ -13,10 +26,16 @@
 
 <table>
   <tr>
-    <td width="25%" align="center"><img src="docs/screenshots/commander.png" alt="Commander para quatro, um jogador em cada borda"><br><sub><b>Commander para quatro</b></sub></td>
-    <td width="25%" align="center"><img src="docs/screenshots/two_players.png" alt="Dois jogadores frente a frente com a barra no meio"><br><sub><b>Frente a frente</b></sub></td>
-    <td width="25%" align="center"><img src="docs/screenshots/pokemon.png" alt="O painel do turno do Pokémon"><br><sub><b>Painel do turno</b></sub></td>
-    <td width="25%" align="center"><img src="docs/screenshots/checkup.png" alt="Entre turnos, com o dano e as moedas"><br><sub><b>Entre turnos</b></sub></td>
+    <td width="25%" align="center"><img src="docs/screenshots/pt/commander.png" alt="Commander para quatro, um jogador em cada borda"><br><sub><b>Commander para quatro</b></sub></td>
+    <td width="25%" align="center"><img src="docs/screenshots/pt/two_players.png" alt="Dois jogadores frente a frente com a barra no meio"><br><sub><b>Frente a frente</b></sub></td>
+    <td width="25%" align="center"><img src="docs/screenshots/pt/pokemon.png" alt="O painel do turno do Pokémon"><br><sub><b>Painel do turno</b></sub></td>
+    <td width="25%" align="center"><img src="docs/screenshots/pt/checkup.png" alt="Entre turnos, com o dano e as moedas"><br><sub><b>Entre turnos</b></sub></td>
+  </tr>
+  <tr>
+    <td width="25%" align="center"><img src="docs/screenshots/pt/home.png" alt="Início com a partida em andamento, nova partida e a última mesa"><br><sub><b>Início</b></sub></td>
+    <td width="25%" align="center"><img src="docs/screenshots/pt/layouts.png" alt="Layouts para quatro jogadores, com setas mostrando para onde cada um olha"><br><sub><b>Como fica a mesa</b></sub></td>
+    <td width="25%" align="center"><img src="docs/screenshots/pt/seats.png" alt="Passo dos lugares: nomes e um botão de girar em cada bloco"><br><sub><b>Lugares</b></sub></td>
+    <td width="25%" align="center"><img src="docs/screenshots/pt/dice.png" alt="Três dados de seis faces com a soma, por cima da mesa"><br><sub><b>Dados</b></sub></td>
   </tr>
 </table>
 
@@ -48,4 +67,30 @@ A partida atual e as preferências ficam em `koreader/settings/matkeeper.lua`, e
 4. **Menu da mesa** (o botão redondo, a barra ou a célula de controles): desfazer, dados, moedas, relógio, monarca e companhia, registro, encerrar a partida ou sair da mesa. Sair guarda a partida para depois, com o relógio pausado. Começar uma partida nova põe a que não terminou nas partidas anteriores.
 5. **O fim:** uma derrota com três ou mais jogadores restantes deixa o jogador fora do jogo e a partida segue; com dois, o plugin oferece encerrar com o outro como vencedor ou continuar (há cartas que mudam essas regras). "Encerrar partida" marca o vencedor, um empate ou nenhum.
 
-Desenvolvimento, licença e marcas estão no [README em inglês](README.md).
+## Compatibilidade
+
+- Feito para o KOReader 2026.07 e para telas de toque, sempre em retrato: os blocos giram dentro da tela para ficar de frente para cada jogador. Foi desenvolvido para um Kindle básico de 10ª geração (firmware 5.18.1).
+- Layout conferido no emulador em 600x800, 758x1024, 1072x1448 e 1264x1680.
+- Usa só o que vem com o KOReader, sem nada para instalar à parte.
+
+## Desenvolvimento
+
+Com o [LuaJIT](https://luajit.org) instalado, da raiz do repositório, as mesmas conferências da CI:
+
+```sh
+sh tools/check.sh   # testes, textos e o pacote
+```
+
+As verificações no KOReader de computador, as ferramentas que geram as imagens e a organização do código estão no [README em inglês](README.md#development) e em [docs/design.md](docs/design.md). Contribuições são aceitas sob a licença do projeto.
+
+## Licença
+
+O código está sob a [GPL-3.0](LICENSE), somente a versão 3. Você pode usar, estudar, modificar e redistribuir, mantendo-o aberto sob a mesma licença. Esta licença não dá direito aos nomes "Matkeeper" e "Beater Studios". Veja o [NOTICE](NOTICE).
+
+Magic: The Gathering é marca da Wizards of the Coast; Pokémon é marca da Nintendo, Creatures e GAME FREAK. Os logos só identificam cada jogo. Este plugin não é oficial nem tem ligação com essas empresas.
+
+---
+
+<p align="center">
+  <sub>Feito pela <a href="https://beaterstudios.com/">Beater Studios</a></sub>
+</p>

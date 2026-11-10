@@ -12,6 +12,11 @@ G_reader_settings:saveSetting("language", lang)
 package.path = plugin_dir .. "/?.lua;" .. package.path
 
 local Device = require("device")
+-- A fixed date and battery, so the pictures come out the same every time.
+Device.hasBattery = function() return true end
+Device.getPowerDevice = function() return { getCapacity = function() return 87 end } end
+local real_time = os.time
+os.time = function(date) return real_time(date or { year = 2026, month = 11, day = 6, hour = 14, min = 32 }) end
 require("document/canvascontext"):init(Device)
 local UIManager = require("ui/uimanager")
 UIManager:init()

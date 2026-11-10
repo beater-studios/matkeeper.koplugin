@@ -88,6 +88,8 @@ If the device sleeps with the plugin open (the table keeps it awake, so this hap
 - `tools/koreader/fuzz_ui.lua`, with `tools/koreader/fuzz.lua`: random taps, holds and swipes on home, setup and every layout of both games in the three languages, each run from nothing saved; it prints how to repeat each error (`SEED`, `ACTIONS`, `ONLY`).
 - `tools/koreader/check_screensaver.lua`: checks when the cover replaces the sleep screen image (plugin on top, a dialog over it, another full-screen window, power off, other modes, after closing) and saves the resulting screen.
 - `tools/koreader/check_rotation.lua` (cases in `rotation_cases.lua`), `check_awake.lua` and `check_sleep.lua` (cases in `sleep_cases.lua`, the table with its timers running): portrait, the awake state and nothing drawn while asleep.
+- `KOREADER_DIR=<desktop KOReader> tools/koreader/readme_screens.sh`: the README screenshots, from `render_screens.lua` with a fixed date: English in `docs/screenshots` and Portuguese in `docs/screenshots/pt`.
+- `KOREADER_DIR=<desktop KOReader> python3 -I tools/make_brand_art.py`: the icon and the README banner in `docs/brand/`, and `docs/social-preview.png`, the image for the GitHub repository settings, in the style of the other Beater Studios plugins: a sheet of paper with the table seen from above, and two of the README screenshots. Run `readme_screens.sh` first. Needs Pillow.
 - `tools/make_assets.py`: draws the icon masks, coins, dice, the banner, the header and the sleep screen cover with Pillow, and reduces the logos to the screen's 16 grays.
 - `tools/package.sh`, with `tools/package_lib.sh`: builds `dist/matkeeper.koplugin.zip` and its checksum, the same zip byte for byte on any machine, and checks that every file the code loads is in it.
 

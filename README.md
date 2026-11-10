@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="docs/brand/banner.png" alt="Matkeeper: a table counter for trading card games">
+</p>
+
+<p align="center">
   <strong>A table counter for trading card games in KOReader, made for e-ink. In Portuguese, English and Spanish.</strong>
 </p>
 
@@ -26,6 +30,12 @@
     <td width="25%" align="center"><img src="docs/screenshots/two_players.png" alt="Two players face to face with the bar of controls between them"><br><sub><b>Face to face</b></sub></td>
     <td width="25%" align="center"><img src="docs/screenshots/pokemon.png" alt="The Pokémon turn panel with reminders, a coin and the conditions of the Active Pokémon"><br><sub><b>Pokémon turn panel</b></sub></td>
     <td width="25%" align="center"><img src="docs/screenshots/checkup.png" alt="Between turns, with the damage to put on the cards and a coin per condition"><br><sub><b>Between turns</b></sub></td>
+  </tr>
+  <tr>
+    <td width="25%" align="center"><img src="docs/screenshots/home.png" alt="Home with the match in progress, a new match and the last table"><br><sub><b>Home</b></sub></td>
+    <td width="25%" align="center"><img src="docs/screenshots/layouts.png" alt="Layouts for four players, with arrows showing where each one faces"><br><sub><b>Table layouts</b></sub></td>
+    <td width="25%" align="center"><img src="docs/screenshots/seats.png" alt="Seats step: names and a turn button on each block"><br><sub><b>Seats</b></sub></td>
+    <td width="25%" align="center"><img src="docs/screenshots/dice.png" alt="Three six-sided dice with the total, over the table"><br><sub><b>Dice</b></sub></td>
   </tr>
 </table>
 
@@ -57,10 +67,18 @@ The checksum of each release is in `matkeeper.koplugin.zip.sha256`. The current 
 4. **The table menu** (the round button, the bar or the controls cell): undo, dice, coins, the clock, the monarch and friends, the log, ending the match or leaving the table. Leaving keeps the match for later, with the clock paused. Starting a new match puts the unfinished one in past matches.
 5. **The end:** a defeat with three or more players left puts that player out and the match goes on; with two, the plugin offers to end it with the other player as the winner, or to keep playing (some cards change these rules). "End match" lets you mark the winner, a draw or no winner.
 
+## Compatibility
+
+- Made for KOReader 2026.07 and for touchscreens, always in portrait: the blocks turn inside the screen to face each player. It was developed for a 10th generation basic Kindle (firmware 5.18.1).
+- Layout checked in the emulator at 600x800, 758x1024, 1072x1448 and 1264x1680.
+- Uses only what comes with KOReader, with nothing else to install.
+
 ## Development
 
+With [LuaJIT](https://luajit.org) installed, from the repository root, the same checks as the CI:
+
 ```sh
-sh tools/check.sh   # tests, texts and the package, as the CI runs them
+sh tools/check.sh   # tests, texts and the package
 ```
 
 With the official KOReader for desktop, `KOREADER_DIR` pointing at the folder with `luajit` and `reader.lua`:
@@ -74,8 +92,16 @@ OUTPUT_DIR=shots tools/koreader/run_headless.sh tools/koreader/render_screens.lu
 
 The other checks (`check_screensaver.lua`, `check_rotation.lua`, `check_awake.lua`, `check_sleep.lua`) run the same way and are listed in [docs/design.md](docs/design.md).
 
-The images in `assets/` come from `tools/make_assets.py` (Pillow). How the code is organized and why is in [docs/design.md](docs/design.md).
+The images in `assets/` come from `tools/make_assets.py`, the README screenshots from `tools/koreader/readme_screens.sh` and the banner, the icon and the social preview from `tools/make_brand_art.py` (Pillow). How the code is organized and why is in [docs/design.md](docs/design.md). Contributions are accepted under the project's license.
 
 ## License
 
-GPL-3.0-only. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Magic: The Gathering is a trademark of Wizards of the Coast; Pokémon is a trademark of Nintendo, Creatures and GAME FREAK. Their logos only identify each game. This plugin is unofficial and not affiliated with them.
+The code is under [GPL-3.0](LICENSE), version 3 only. You may use, study, modify and redistribute it, keeping it open under the same license. This license grants no rights to the names "Matkeeper" and "Beater Studios". See [NOTICE](NOTICE).
+
+Magic: The Gathering is a trademark of Wizards of the Coast; Pokémon is a trademark of Nintendo, Creatures and GAME FREAK. Their logos only identify each game. This plugin is unofficial and not affiliated with them.
+
+---
+
+<p align="center">
+  <sub>Made by <a href="https://beaterstudios.com/">Beater Studios</a></sub>
+</p>
