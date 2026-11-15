@@ -47,11 +47,43 @@ end
 for _, lang in ipairs({ "pt", "en", "es" }) do
     collect(i18n[lang])
 end
+-- Texts made from a format ("Tax %d", "%s's counters") count too, by a pattern with at least a few
+-- letters of their own, so a name alone never matches.
+local ui_patterns = {}
+for text in pairs(ui_texts) do
+    if text:find("%%[%d%.]*[sd]") then
+        local parts, pos, letters = {}, 1, 0
+        for start, spec, stop in text:gmatch("()%%[%d%.]*([sd])()") do
+            local literal = text:sub(pos, start - 1)
+            letters = letters + select(2, literal:gsub("%a", ""))
+            parts[#parts + 1] = literal:gsub("%p", "%%%0")
+            parts[#parts + 1] = spec == "d" and "%-?%d+" or ".+"
+            pos = stop
+        end
+        local rest = text:sub(pos)
+        letters = letters + select(2, rest:gsub("%a", ""))
+        parts[#parts + 1] = rest:gsub("%p", "%%%0")
+        if letters >= 3 then
+            ui_patterns[#ui_patterns + 1] = "^" .. table.concat(parts) .. "$"
+        end
+    end
+end
+local function is_ui_text(text)
+    if ui_texts[text] then
+        return true
+    end
+    for _, pattern in ipairs(ui_patterns) do
+        if text:find(pattern) then
+            return true
+        end
+    end
+    return false
+end
 local real_text = Draw.text
 Draw.text = function(bb, text, face, x, y, w, h, ...)
     if text and text ~= "" then
         drawn[#drawn + 1] = text
-        if ui_texts[text] and Draw.text_width(text, face) > math.floor(w) + 1 then
+        if is_ui_text(text) and Draw.text_width(text, face) > math.floor(w) + 1 then
             cut[text] = true
         end
     end
@@ -171,6 +203,21 @@ for _, lang in ipairs({ "pt", "en", "es" }) do
         check(screen, lang .. " magic " .. open)
         screen:close_dialog()
     end
+    -- Commander damage on the table map, from every seat, with partners and a lethal amount.
+    local cm = screen.match
+    cm:set_partners(3, true)
+    cm:change_commander_damage(2, 3, 2, 21)
+    cm:change_commander_damage(2, 1, 1, 7)
+    cm:change_commander_damage(4, 2, 1, 12)
+    screen:update_table()
+    check(screen, lang .. " magic commander blocks")
+    for i = 1, 4 do
+        screen:open_markers(i, 1, "commander")
+        check(screen, lang .. " magic commander tab " .. i)
+        screen:open_markers(i, 1, "counters")
+        check(screen, lang .. " magic counters tab " .. i)
+        screen:close_dialog()
+    end
     screen:open_holder("monarch")
     check(screen, lang .. " magic monarch")
     screen:close_dialog()
@@ -190,6 +237,76 @@ for count = 2, 6 do
     for _, layout in ipairs(Layouts.for_players(count, W, H)) do
         start(screen, "magic", count == 2 and "standard" or "commander", count, layout.id, true)
         check(screen, "layout " .. layout.id)
+    end
+end
+
+-- Commander damage by touch: the map of a block opens the commander tab, and on the large map each
+-- opponent (each partner apart) takes on the left half and gives on the right half, from any seat.
+start(screen, "magic", "commander", 4, "r:p.pp.p", false)
+screen.match:set_partners(1, true)
+-- Some damage everywhere, so taking has something to take.
+for i, _ in ipairs(screen.match.players) do
+    for j, other in ipairs(screen.match.players) do
+        if j ~= i then
+            for k = 1, other.commanders do
+                screen.match:change_commander_damage(i, j, k, 5)
+            end
+        end
+    end
+end
+screen:update_table()
+local function damage_from_all(i)
+    local sum = 0
+    for j, other in ipairs(screen.match.players) do
+        if j ~= i then
+            for k = 1, other.commanders do
+                sum = sum + screen.match:commander_damage(i, j, k)
+            end
+        end
+    end
+    return sum
+end
+local function tap_local(pane, lx, ly)
+    local gx, gy = Layouts.from_local(pane.seat or "bottom", pane.w, pane.h, lx, ly)
+    screen:onTap(nil, { pos = Geom:new{ x = pane.x + gx, y = pane.y + gy } })
+    UIManager:forceRePaint()
+end
+for i = 1, 4 do
+    local block = screen.block_panes[i]
+    UIManager:forceRePaint()
+    local map_hit = block.hits[#block.hits]
+    drawn = {}
+    tap_local(block, map_hit.x + map_hit.w / 2, map_hit.y + map_hit.h / 2)
+    if not screen.modal or drew(screen.t.counters.poison) then
+        problem("the map of block " .. i .. " did not open the commander tab")
+    end
+    local hits = {}
+    -- Only areas with an action: the box itself swallows taps, and its center may fall on the map.
+    for _, hit in ipairs(screen.modal and screen.modal.hits or {}) do
+        if hit.tap then
+            hits[#hits + 1] = { x = hit.x + hit.w / 2, y = hit.y + hit.h / 2 }
+        end
+    end
+    local plus, minus = 0, 0
+    for _, hit in ipairs(hits) do
+        screen:open_markers(i, 1, "commander")
+        UIManager:forceRePaint()
+        local partners = screen.match.players[i].commanders
+        local before = damage_from_all(i)
+        tap_local(screen.modal, hit.x, hit.y)
+        local delta = damage_from_all(i) - before
+        if delta == 1 then
+            plus = plus + 1
+        elseif delta == -1 then
+            minus = minus + 1
+        end
+        screen.match:set_partners(i, partners > 1)
+    end
+    screen:close_dialog()
+    -- Four opponents' commanders: three players, one of them (player 1) with partners, unless i is player 1.
+    local expected = i == 1 and 3 or 4
+    if plus ~= expected or minus ~= expected then
+        problem(string.format("commander map of player %d: %d parts give and %d take, expected %d", i, plus, minus, expected))
     end
 end
 

@@ -7,6 +7,7 @@ local logger = require("logger")
 
 local Draw = require("matkeeper/ui/draw")
 local Layouts = require("matkeeper/layouts")
+local Refresh = require("matkeeper/refresh")
 local Sleep = require("matkeeper/sleep")
 
 local Screen = Device.screen
@@ -141,7 +142,7 @@ function Surface:refresh(pane, mode)
     mode = mode or self:refresh_mode()
     local region = pane and mode ~= "full" and Geom:new{ x = pane.x, y = pane.y, w = pane.w, h = pane.h } or self.dimen
     Sleep.dirty(self, function()
-        return mode, region
+        return Refresh.settle(mode), region
     end)
 end
 

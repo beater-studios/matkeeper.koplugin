@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1]
+
+- Commander damage by seat: each Magic block shows the table in miniature, as its player sees it, with the damage from each opponent's commander in that opponent's seat, instead of pills with names ("Player 1 3"). With partners, the block shows the higher of the two. Tap it to open the large map, where each opponent takes or gives damage by halves, as life does.
+- A player's counters come in two tabs, Counters and Commander, and lying down, when they do not fit in one column, the counters use two columns instead of pages. Shorter labels for the tax ("Tax", "Tax 1") and partners.
+- The label of a row with - and + buttons no longer runs into the minus button, and the - and + of the large map are centered.
+- The monarch and initiative badges sit under the player's name.
+- After a full refresh, the next update waits for it to end, so a tap right after a flash no longer leaves part of the screen white on a Kindle.
+
 ## [0.1.0]
 
 First version, with Magic: The Gathering and the Pokémon TCG.

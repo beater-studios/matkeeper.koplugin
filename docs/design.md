@@ -4,6 +4,7 @@ How the plugin works inside, for anyone who wants to understand the code or chan
 
 ## Status
 
+- **0.1.1 (2026-11-14):** commander damage by seat, on a small map of the table in each block and a large one in the player's counters, which come in two tabs, after a report from a player on a Kobo Clara. Tested in the desktop emulator, not yet on a device.
 - **0.1.0 (2026-11-08):** Magic: The Gathering (Standard, Commander, Two-Headed Giant, Brawl, Custom) and the Pokémon TCG as a turn panel, layouts for 2 to 6 players, dice, coins, clock, undo, log and past matches. Tested in the desktop emulator and installed on the device for testing.
 
 ## Rules and sources
@@ -27,7 +28,8 @@ Damage, prizes and the Bench are not tracked on purpose: they stay on the physic
 | `ui/draw.lua` | Colors, fonts sized in pixels, shapes, icon masks and pictures. |
 | `ui/surface.lua` | The screen as panes, each drawn facing its seat (see below). |
 | `ui/blocks.lua` | The Magic block, the Pokémon turn panel, the bar, the round menu button and the controls cell. |
-| `ui/dialogs.lua` | Modal views: lists, keypad, dice, coins, Checkup, the coin call. |
+| `ui/table_map.lua` | The table in miniature, turned to one player's view, for commander damage by seat (see below). |
+| `ui/dialogs.lua` | Modal views: lists (with tabs, and two columns when lying down), keypad, dice, coins, Checkup, the coin call. |
 | `ui/pages.lua` | Home, setup steps, past matches, a log and settings. |
 | `ui/screen.lua` | The flow: setup, the table, dialogs, saving, the clock, the awake state and the Back key. |
 | `state.lua` | Reads the settings file back, part by part (see Saving). |
@@ -46,6 +48,12 @@ Each pane keeps its buffer until it changes, so a tap redraws one block and refr
 A pane whose view fails to draw does not lock the screen: the error goes to the log, and the pane shows a short message that leads back to home (or closes the plugin from home). The rest of the table keeps working.
 
 The screen opens in portrait and ignores rotation while open (`portrait.lua`), giving the reader's rotation back on close, also when the opening fails; the blocks turn inside the portrait screen. The menu opens the screen protected, and a failed opening shows a warning in the reader's language. The Back key of devices with keys closes a dialog, goes back one setup step, leaves the table for home (the match stays) and closes the plugin from home.
+
+## Commander damage by seat
+
+In formats with commander damage, each Magic block shows the table in miniature in its top right corner, turned to its player's view: the player's own seat is gray, and every other seat shows the damage that player's commander dealt, empty at 0 and inverted at the lethal 21. With partners, the seat shows the higher of the two, whole, since split the numbers would be too small to read; the large map shows both. A number needs no name, which keeps the blocks readable with default names ("Player 1"). The map takes the larger free space beside the life total (above the + mark, clear of a pending change) or above it, measured with a two-digit total so it does not change size as life goes up and down. The monarch and initiative badges sit under the name.
+
+Tapping the map opens the player's counters on the Commander tab: the same map, large, with each opponent's name and damage, the left half taking and the right half giving (a hold moves 5), and partners in two strips. The other tab, Counters, has poison, energy, experience, rad, the commander tax and partners. Lying down (a player at a side of the table), when its rows do not fit in one column, the Counters tab uses two columns with the rows shared evenly, instead of pages; when they fit, the box keeps its usual width. `tools/koreader/check_layout.lua` opens both tabs from every seat, taps every half of the map, and checks that interface texts fit their boxes, also those made from a format ("Tax 1").
 
 ## Layouts
 

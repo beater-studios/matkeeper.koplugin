@@ -668,6 +668,14 @@ function Screen:show_table()
     local layout = Layouts.decode(match.layout) or Layouts.for_players(#match.players, w, h)[1]
     local margin, gap = s(8), s(8)
     local cells = Layouts.rects(layout, margin, margin, w - 2 * margin, h - 2 * margin, gap, s(56))
+    -- The table in miniature, for commander damage by seat: the player cells, in screen coordinates.
+    self.table_map = { w = w, h = h, cells = {} }
+    for _, cell in ipairs(cells) do
+        if cell.kind == "p" then
+            local map_cells = self.table_map.cells
+            map_cells[#map_cells + 1] = { x = cell.x, y = cell.y, w = cell.w, h = cell.h, player = #map_cells + 1 }
+        end
+    end
     local panes = {}
     self.block_panes = {}
     self.clock_panes = {}
@@ -766,6 +774,8 @@ function Screen:block_view(i)
         on_keypad = function() self:open_keypad(i) end,
         on_menu = function() self:open_player_menu(i) end,
         on_markers = function() self:open_markers(i) end,
+        on_commander = function() self:open_markers(i, 1, "commander") end,
+        map = self.table_map,
     }
     if self.roll then
         o.roll = { value = self.roll.values[i] or 0, winner = self.roll.winner == i }
@@ -1095,56 +1105,62 @@ function Screen:concede(i)
     end
 end
 
-function Screen:open_markers(i, page)
+-- The counters of player i, in two tabs when the format has commander damage: "counters" (poison, energy,
+-- experience, rad, the commander tax and partners) and "commander" (the damage from each opponent, on the
+-- table map, where each one sits).
+function Screen:open_markers(i, page, tab)
     if self:commit_pending() then
         return
     end
     local match, t = self.match, self.t
     local p = match.players[i]
     local rules = match:rules()
+    local has_map = rules.commander_damage and self.table_map ~= nil
+    tab = has_map and tab or "counters"
     local rows = {}
     local function refresh()
         self:save()
         self:update_block(i)
-        self:open_markers(i, page)
+        self:open_markers(i, page, tab)
     end
-    for _, name in ipairs(Match.GAMES.magic.counters) do
-        rows[#rows + 1] = { kind = "stepper", label = t.counters[name], value = match:counter(i, name),
-            on_minus = function() match:change_counter(i, name, -1) refresh() end,
-            on_plus = function() match:change_counter(i, name, 1) refresh() end,
-            on_minus_hold = function() match:change_counter(i, name, -5) refresh() end,
-            on_plus_hold = function() match:change_counter(i, name, 5) refresh() end }
-    end
-    if rules.commander_damage then
-        for j, other in ipairs(match.players) do
-            if j ~= i then
-                for k = 1, other.commanders do
-                    local label = other.commanders > 1 and string.format(t.commander_from_n, other.name, k) or string.format(t.commander_from, other.name)
-                    rows[#rows + 1] = { kind = "stepper", label = label, value = match:commander_damage(i, j, k),
-                        on_minus = function() match:change_commander_damage(i, j, k, -1) refresh() end,
-                        on_plus = function() match:change_commander_damage(i, j, k, 1) refresh() end,
-                        on_minus_hold = function() match:change_commander_damage(i, j, k, -5) refresh() end,
-                        on_plus_hold = function() match:change_commander_damage(i, j, k, 5) refresh() end }
-                end
+    if tab == "commander" then
+        rows[#rows + 1] = { kind = "map", map = self.table_map, seat = p.seat, match = match, i = i,
+            on_change = function(source, k, delta)
+                match:change_commander_damage(i, source, k, delta)
+                refresh()
+            end }
+    else
+        for _, name in ipairs(Match.GAMES.magic.counters) do
+            rows[#rows + 1] = { kind = "stepper", label = t.counters[name], value = match:counter(i, name),
+                on_minus = function() match:change_counter(i, name, -1) refresh() end,
+                on_plus = function() match:change_counter(i, name, 1) refresh() end,
+                on_minus_hold = function() match:change_counter(i, name, -5) refresh() end,
+                on_plus_hold = function() match:change_counter(i, name, 5) refresh() end }
+        end
+        if rules.tax then
+            for k = 1, p.commanders do
+                rows[#rows + 1] = { kind = "stepper", label = p.commanders > 1 and string.format(t.tax_label_n, k) or t.tax_label, value = "+" .. match:tax(i, k),
+                    on_minus = function() match:change_casts(i, k, -1) refresh() end,
+                    on_plus = function() match:change_casts(i, k, 1) refresh() end }
             end
+            rows[#rows + 1] = { kind = "toggle", label = t.partners, on = p.commanders > 1, on_tap = function()
+                match:set_partners(i, p.commanders == 1)
+                self:save()
+                self:update_table()
+                self:open_markers(i, page, tab)
+            end }
         end
     end
-    if rules.tax then
-        for k = 1, p.commanders do
-            rows[#rows + 1] = { kind = "stepper", label = p.commanders > 1 and string.format(t.tax_label_n, k) or t.tax_label, value = "+" .. match:tax(i, k),
-                on_minus = function() match:change_casts(i, k, -1) refresh() end,
-                on_plus = function() match:change_casts(i, k, 1) refresh() end }
-        end
-        rows[#rows + 1] = { kind = "toggle", label = t.partners, on = p.commanders > 1, on_tap = function()
-            match:set_partners(i, p.commanders == 1)
-            self:save()
-            self:update_table()
-            self:open_markers(i, page)
-        end }
+    local tabs
+    if has_map then
+        tabs = {
+            { label = t.markers, selected = tab == "counters", on_tap = function() self:open_markers(i, 1, "counters") end },
+            { label = t.tab_commander, selected = tab == "commander", on_tap = function() self:open_markers(i, 1, "commander") end },
+        }
     end
     self:open_modal(Dialogs.list{
-        title = string.format(t.markers_title, p.name), rows = rows, page = page,
-        on_page = function(pg) self:open_markers(i, pg) end,
+        title = string.format(t.markers_title, p.name), rows = rows, page = page, tabs = tabs, columns = tab == "counters",
+        on_page = function(pg) self:open_markers(i, pg, tab) end,
         buttons = { { text = t.close, style = "filled", on_tap = function()
             self:close_dialog()
             self:check_defeats()
@@ -1152,7 +1168,7 @@ function Screen:open_markers(i, page)
     }, p.seat, function()
         self:close_dialog()
         self:check_defeats()
-    end, function() self:open_markers(i, page) end)
+    end, function() self:open_markers(i, page, tab) end)
 end
 
 function Screen:open_keypad(i)

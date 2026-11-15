@@ -1,5 +1,6 @@
 local Draw = require("matkeeper/ui/draw")
 local Layouts = require("matkeeper/layouts")
+local TableMap = require("matkeeper/ui/table_map")
 
 -- Modal views drawn over the darkened table, facing a seat. Each returns a view for Surface:show_modal.
 local Dialogs = {}
@@ -70,12 +71,124 @@ end
 local ROW_H = 52
 
 local function row_height(row)
-    if row.kind == "separator" then
+    if row.kind == "map" then
+        return row.height or s(160)
+    elseif row.kind == "separator" then
         return s(16)
     elseif row.kind == "text" then
         return s(30)
     end
     return s(ROW_H) + s(10)
+end
+
+local TAB_H = 44
+
+-- Tabs under the title: { label, selected, on_tap }. Returns the y below them.
+function Dialogs.tabs(ctx, tabs, lx, y, lw)
+    local bb = ctx.bb
+    if not tabs then
+        return y
+    end
+    local th = s(TAB_H)
+    Draw.rect(bb, lx, y, lw, th, Draw.PAPER, th / 2)
+    local tw = lw / #tabs
+    for n, tab in ipairs(tabs) do
+        local tx = lx + (n - 1) * tw
+        if tab.selected then
+            Draw.pill(bb, tx + s(3), y + s(3), tw - s(6), th - s(6), Draw.INK)
+        end
+        Draw.text(bb, tab.label, Draw.face("bold", s(16)), tx + s(10), y, tw - s(20), th, "center", tab.selected and Draw.WHITE or Draw.BLACK)
+        if not tab.selected then
+            ctx:hit(tx, y - s(4), tw, th + s(8), tab.on_tap)
+        end
+    end
+    y = y + th + s(14)
+    return y
+end
+
+-- Draws rows from y, in lx..lx+lw. Returns the y below them.
+function Dialogs.rows(ctx, rows, lx, y, lw)
+    local bb = ctx.bb
+    for _, row in ipairs(rows) do
+        local rh = row_height(row)
+        if row.kind == "map" then
+            TableMap.draw_large(ctx, { map = row.map, seat = row.seat, match = row.match, i = row.i,
+                x = lx + (lw - row.map_w) / 2, y = y, w = row.map_w, h = row.map_h, on_change = row.on_change })
+        elseif row.kind == "separator" then
+            Draw.hline(bb, lx + s(10), y + rh / 2, lw - s(20), s(1.5), Draw.PALE)
+        elseif row.kind == "text" then
+            Draw.text(bb, row.label, Draw.face("sans", s(15)), lx, y, lw, rh, "center", Draw.DARK)
+        elseif row.kind == "stepper" then
+            local h = s(ROW_H)
+            Draw.rect(bb, lx, y, lw, h, Draw.PAPER, h / 2)
+            -- The label ends before the minus button, which starts 173 from the right edge.
+            Draw.text(bb, row.label, Draw.face("bold", s(16)), lx + s(20), y, lw - s(205), h, "left")
+            local cx = lx + lw - s(30)
+            stepper_button(ctx, cx, y + h / 2, true, row.on_plus, row.on_plus_hold)
+            Draw.text(bb, tostring(row.value), Draw.face("serif", s(22)), cx - s(96), y, s(56), h, "center")
+            stepper_button(ctx, cx - s(124), y + h / 2, false, row.on_minus, row.on_minus_hold)
+        elseif row.kind == "toggle" then
+            local h = s(ROW_H)
+            Draw.pill(bb, lx, y, lw, h, Draw.WHITE, Draw.BLACK, s(1.5))
+            Draw.text(bb, row.label, Draw.face("bold", s(16)), lx + s(20), y, lw - s(110), h, "left")
+            local tw, th = s(56), s(30)
+            local tx, ty = lx + lw - s(20) - tw, y + (h - th) / 2
+            Draw.pill(bb, tx, ty, tw, th, row.on and Draw.INK or Draw.PALE)
+            Draw.circle(bb, row.on and (tx + tw - th / 2) or (tx + th / 2), ty + th / 2, th / 2 - s(4), Draw.WHITE)
+            ctx:hit(lx, y, lw, h, row.on_tap)
+        else
+            local h = s(ROW_H)
+            local filled = row.selected or row.danger
+            local ink = filled and Draw.WHITE or (row.disabled and Draw.LIGHT or Draw.BLACK)
+            Draw.pill(bb, lx, y, lw, h, filled and Draw.INK or Draw.WHITE, (not filled) and (row.disabled and Draw.PALE or Draw.BLACK) or nil, s(1.5))
+            local tx = lx + s(24)
+            if row.radio then
+                Draw.circle(bb, lx + s(30), y + h / 2, s(10), Draw.WHITE)
+                if not filled then
+                    Draw.ring(bb, lx + s(30), y + h / 2, s(10), s(2), Draw.BLACK)
+                else
+                    Draw.circle(bb, lx + s(30), y + h / 2, s(5), Draw.INK)
+                end
+                tx = lx + s(54)
+            elseif row.icon then
+                Draw.icon(bb, row.icon, lx + s(34), y + h / 2, s(24), ink)
+                tx = lx + s(58)
+            end
+            local align = (row.radio or row.icon or row.value) and "left" or "center"
+            local label_w = lw - (tx - lx) - s(20) - (row.value and s(110) or 0)
+            if align == "center" then
+                Draw.text(bb, row.label, Draw.face("bold", s(18)), lx, y, lw, h, "center", ink)
+            else
+                Draw.text(bb, row.label, Draw.face("bold", s(18)), tx, y, label_w, h, "left", ink)
+            end
+            if row.value then
+                Draw.text(bb, row.value, Draw.face(row.value_face or "serif", s(row.value_px or 20)), lx + lw - s(130), y, s(110), h, "right", filled and Draw.LIGHT or Draw.MID)
+            end
+            if row.on_tap and not row.disabled then
+                ctx:hit(lx, y, lw, h, row.on_tap)
+            end
+        end
+        y = y + rh
+    end
+    return y
+end
+
+-- The buttons at the bottom of a box at x0, y0 of bw x bh: { text, style, on_tap }.
+function Dialogs.buttons(ctx, buttons, x0, y0, bw, bh)
+    local bb = ctx.bb
+    if buttons and #buttons > 0 then
+        local n = #buttons
+        local gap = s(20)
+        local bwid = (bw - s(60) - gap * (n - 1)) / n
+        local by = y0 + bh - s(70)
+        for b, button in ipairs(buttons) do
+            local bx = x0 + s(30) + (b - 1) * (bwid + gap)
+            Draw.button(bb, bx, by, bwid, s(46), button.text, button.style, s(16))
+            if button.style ~= "disabled" then
+                ctx:hit(bx, by - s(4), bwid, s(54), button.on_tap)
+            end
+        end
+    end
 end
 
 -- A list dialog. spec: title, subtitle, rows, buttons, on_rotate, page (current page, 1-based),
@@ -84,134 +197,118 @@ end
 --   { kind = "stepper", label, value, on_minus, on_plus, on_minus_hold, on_plus_hold }
 --   { kind = "toggle", label, on, on_tap }
 --   { kind = "separator" } and { kind = "text", label }
--- Buttons: { text, style ("filled", "outline", "disabled"), on_tap }.
+--   { kind = "map", map, seat, match, i, on_change(source, k, delta) }: the commander damage of player i
+--     on the table map (TableMap.draw_large), as large as the other rows leave room for
+-- Buttons: { text, style ("filled", "outline", "disabled"), on_tap }. Tabs, under the title:
+-- { label, selected, on_tap }.
 function Dialogs.list(spec)
     return { draw = function(_, ctx)
         local bb = ctx.bb
-        local bw = width_for(ctx)
-        local head = s(40) + (spec.subtitle and s(28) or 0) + s(24)
+        local head = s(40) + (spec.subtitle and s(28) or 0) + s(24) + (spec.tabs and s(TAB_H + 14) or 0)
         local foot = (spec.buttons and #spec.buttons > 0) and s(76) or s(16)
         local room = ctx.h - 2 * margin_y(ctx, spec.on_rotate) - head - foot - s(16)
-        -- Pages of rows that fit the height.
-        local pages, current, used = { {} }, 1, 0
+        -- Lying down (a player at a side of the table), a dialog with columns uses two of them, but only
+        -- when its rows do not fit in one.
+        local rows_height = 0
         for _, row in ipairs(spec.rows) do
-            local rh = row_height(row)
-            if used + rh > room - s(48) and #pages[current] > 0 then
-                current = current + 1
-                pages[current] = {}
-                used = 0
+            rows_height = rows_height + (row.kind == "map" and 0 or row_height(row))
+        end
+        local columns = (spec.columns and ctx.w > ctx.h and rows_height > room) and 2 or 1
+        local bw = columns > 1 and math.min(ctx.w - 2 * s(30), s(780)) or width_for(ctx)
+        local lx, lw = 0, bw - s(56)
+        local gap = s(20)
+        local col_w = (lw - gap * (columns - 1)) / columns
+        -- A map takes the height the other rows leave, keeping the table's shape.
+        local others = 0
+        for _, row in ipairs(spec.rows) do
+            if row.kind ~= "map" then
+                others = others + row_height(row)
             end
-            pages[current][#pages[current] + 1] = row
-            used = used + rh
         end
-        local page = math.max(1, math.min(spec.page or 1, #pages))
-        local rows = pages[page]
-        local content = 0
-        for _, row in ipairs(rows) do
-            content = content + row_height(row)
+        local total = others
+        for _, row in ipairs(spec.rows) do
+            if row.kind == "map" then
+                local mw, mh = TableMap.fit(row.map, row.seat, col_w, math.max(s(150), room - others - s(10)))
+                row.map_w, row.map_h, row.height = mw, mh, mh + s(10)
+                total = total + row.height
+            end
         end
-        if #pages > 1 then
-            local tallest = 0
-            for _, list in ipairs(pages) do
-                local hsum = 0
-                for _, row in ipairs(list) do
-                    hsum = hsum + row_height(row)
+        -- Columns of rows that fit the height, keeping room for the page footer when they do not all fit.
+        -- When everything fits, the columns share the rows evenly instead of filling the first one.
+        local fits = total <= room * columns
+        local limit = fits and room or room - s(48)
+        local function height_of(chunk)
+            local hsum = 0
+            for _, row in ipairs(chunk or {}) do
+                hsum = hsum + row_height(row)
+            end
+            return hsum
+        end
+        local chunks
+        if fits and columns > 1 then
+            local first, second = {}, {}
+            local half = math.ceil(#spec.rows / 2)
+            for n, row in ipairs(spec.rows) do
+                local chunk = n <= half and first or second
+                chunk[#chunk + 1] = row
+            end
+            if height_of(first) <= room and height_of(second) <= room then
+                chunks = { first, second }
+            end
+        end
+        if not chunks then
+            local used = 0
+            chunks = { {} }
+            for _, row in ipairs(spec.rows) do
+                local rh = row_height(row)
+                if used + rh > limit and #chunks[#chunks] > 0 then
+                    chunks[#chunks + 1] = {}
+                    used = 0
                 end
-                tallest = math.max(tallest, hsum)
+                local chunk = chunks[#chunks]
+                chunk[#chunk + 1] = row
+                used = used + rh
             end
-            content = tallest + s(48)
+        end
+        local pages = math.ceil(#chunks / columns)
+        local page = math.max(1, math.min(spec.page or 1, pages))
+        -- Every page as tall as the tallest column, so the box does not jump between pages.
+        local content = 0
+        for _, chunk in ipairs(chunks) do
+            content = math.max(content, height_of(chunk))
+        end
+        if pages > 1 then
+            content = content + s(48)
         end
         local bh = head + content + foot + s(8)
         local x0, y0 = Dialogs.frame(ctx, bw, bh)
         local y = title(ctx, x0, y0 + s(16), bw, spec.title, spec.subtitle) + s(6)
         rotate_button(ctx, spec.on_rotate)
-        local lx, lw = x0 + s(28), bw - s(56)
-        for _, row in ipairs(rows) do
-            local rh = row_height(row)
-            if row.kind == "separator" then
-                Draw.hline(bb, lx + s(10), y + rh / 2, lw - s(20), s(1.5), Draw.PALE)
-            elseif row.kind == "text" then
-                Draw.text(bb, row.label, Draw.face("sans", s(15)), lx, y, lw, rh, "center", Draw.DARK)
-            elseif row.kind == "stepper" then
-                local h = s(ROW_H)
-                Draw.rect(bb, lx, y, lw, h, Draw.PAPER, h / 2)
-                Draw.text(bb, row.label, Draw.face("bold", s(16)), lx + s(20), y, lw - s(190), h, "left")
-                local cx = lx + lw - s(30)
-                stepper_button(ctx, cx, y + h / 2, true, row.on_plus, row.on_plus_hold)
-                Draw.text(bb, tostring(row.value), Draw.face("serif", s(22)), cx - s(96), y, s(56), h, "center")
-                stepper_button(ctx, cx - s(124), y + h / 2, false, row.on_minus, row.on_minus_hold)
-            elseif row.kind == "toggle" then
-                local h = s(ROW_H)
-                Draw.pill(bb, lx, y, lw, h, Draw.WHITE, Draw.BLACK, s(1.5))
-                Draw.text(bb, row.label, Draw.face("bold", s(16)), lx + s(20), y, lw - s(110), h, "left")
-                local tw, th = s(56), s(30)
-                local tx, ty = lx + lw - s(20) - tw, y + (h - th) / 2
-                Draw.pill(bb, tx, ty, tw, th, row.on and Draw.INK or Draw.PALE)
-                Draw.circle(bb, row.on and (tx + tw - th / 2) or (tx + th / 2), ty + th / 2, th / 2 - s(4), Draw.WHITE)
-                ctx:hit(lx, y, lw, h, row.on_tap)
-            else
-                local h = s(ROW_H)
-                local filled = row.selected or row.danger
-                local ink = filled and Draw.WHITE or (row.disabled and Draw.LIGHT or Draw.BLACK)
-                Draw.pill(bb, lx, y, lw, h, filled and Draw.INK or Draw.WHITE, (not filled) and (row.disabled and Draw.PALE or Draw.BLACK) or nil, s(1.5))
-                local tx = lx + s(24)
-                if row.radio then
-                    Draw.circle(bb, lx + s(30), y + h / 2, s(10), Draw.WHITE)
-                    if not filled then
-                        Draw.ring(bb, lx + s(30), y + h / 2, s(10), s(2), Draw.BLACK)
-                    else
-                        Draw.circle(bb, lx + s(30), y + h / 2, s(5), Draw.INK)
-                    end
-                    tx = lx + s(54)
-                elseif row.icon then
-                    Draw.icon(bb, row.icon, lx + s(34), y + h / 2, s(24), ink)
-                    tx = lx + s(58)
-                end
-                local align = (row.radio or row.icon or row.value) and "left" or "center"
-                local label_w = lw - (tx - lx) - s(20) - (row.value and s(110) or 0)
-                if align == "center" then
-                    Draw.text(bb, row.label, Draw.face("bold", s(18)), lx, y, lw, h, "center", ink)
-                else
-                    Draw.text(bb, row.label, Draw.face("bold", s(18)), tx, y, label_w, h, "left", ink)
-                end
-                if row.value then
-                    Draw.text(bb, row.value, Draw.face(row.value_face or "serif", s(row.value_px or 20)), lx + lw - s(130), y, s(110), h, "right", filled and Draw.LIGHT or Draw.MID)
-                end
-                if row.on_tap and not row.disabled then
-                    ctx:hit(lx, y, lw, h, row.on_tap)
-                end
+        lx = x0 + s(28)
+        y = Dialogs.tabs(ctx, spec.tabs, lx, y, lw)
+        for c = 1, columns do
+            local chunk = chunks[(page - 1) * columns + c]
+            if chunk then
+                Dialogs.rows(ctx, chunk, lx + (c - 1) * (col_w + gap), y, col_w)
             end
-            y = y + rh
         end
-        if #pages > 1 then
+        if pages > 1 then
             local py = y0 + head + content - s(40)
-            Draw.text(bb, string.format("%d / %d", page, #pages), Draw.face("sans", s(15)), lx, py, lw, s(36), "center", Draw.DARK)
+            Draw.text(bb, string.format("%d / %d", page, pages), Draw.face("sans", s(15)), lx, py, lw, s(36), "center", Draw.DARK)
             Draw.icon(bb, "chevron_left", lx + s(30), py + s(18), s(24), page > 1 and Draw.BLACK or Draw.PALE)
-            Draw.icon(bb, "chevron_right", lx + lw - s(30), py + s(18), s(24), page < #pages and Draw.BLACK or Draw.PALE)
+            Draw.icon(bb, "chevron_right", lx + lw - s(30), py + s(18), s(24), page < pages and Draw.BLACK or Draw.PALE)
             ctx:hit(lx, py - s(6), s(90), s(48), function()
                 if page > 1 then
                     spec.on_page(page - 1)
                 end
             end)
             ctx:hit(lx + lw - s(90), py - s(6), s(90), s(48), function()
-                if page < #pages then
+                if page < pages then
                     spec.on_page(page + 1)
                 end
             end)
         end
-        if spec.buttons and #spec.buttons > 0 then
-            local n = #spec.buttons
-            local gap = s(20)
-            local bwid = (bw - s(60) - gap * (n - 1)) / n
-            local by = y0 + bh - s(70)
-            for b, button in ipairs(spec.buttons) do
-                local bx = x0 + s(30) + (b - 1) * (bwid + gap)
-                Draw.button(bb, bx, by, bwid, s(46), button.text, button.style, s(16))
-                if button.style ~= "disabled" then
-                    ctx:hit(bx, by - s(4), bwid, s(54), button.on_tap)
-                end
-            end
-        end
+        Dialogs.buttons(ctx, spec.buttons, x0, y0, bw, bh)
     end }
 end
 

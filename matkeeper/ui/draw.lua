@@ -80,6 +80,18 @@ function Draw.hline(bb, x, y, w, size, color)
     bb:paintRect(math.floor(x), math.floor(y), math.floor(w), math.max(1, math.floor(size + 0.5)), color)
 end
 
+-- A minus or plus sign centered on (cx, cy), with arms of `arm` pixels from the center and bars of the same
+-- whole thickness, so both bars cross at their middle at any size.
+function Draw.sign(bb, cx, cy, arm, thick, plus, color)
+    arm = math.max(2, math.floor(arm + 0.5))
+    thick = math.max(2, math.floor(thick + 0.5))
+    local x0, y0 = math.floor(cx - arm + 0.5), math.floor(cy - thick / 2 + 0.5)
+    bb:paintRect(x0, y0, 2 * arm, thick, color)
+    if plus then
+        bb:paintRect(math.floor(cx - thick / 2 + 0.5), math.floor(cy - arm + 0.5), thick, 2 * arm, color)
+    end
+end
+
 local function load(path, w, h)
     local image = RenderImage:renderImageFile(path, false, w, h)
     if not image then

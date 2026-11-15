@@ -1,4 +1,5 @@
 local Draw = require("matkeeper/ui/draw")
+local TableMap = require("matkeeper/ui/table_map")
 
 -- The views of the table: a block per player (Magic score or Pokémon turn panel), the bar between
 -- two players face to face, the round menu button and the controls cell. Each one draws in its
@@ -27,17 +28,6 @@ local function magic_chips(o)
             list[#list + 1] = { icon = icons[name], text = name == "poison" and label or label }
         end
     end
-    for source, row in pairs(p.damage) do
-        for k, value in pairs(row) do
-            if value > 0 then
-                local name = match.players[source] and match.players[source].name or "?"
-                if (match.players[source] and match.players[source].commanders or 1) > 1 then
-                    name = name .. " " .. k
-                end
-                list[#list + 1] = { icon = "shield", text = name .. " " .. value }
-            end
-        end
-    end
     if match:rules().tax then
         for k = 1, p.commanders do
             local tax = match:tax(i, k)
@@ -50,7 +40,8 @@ local function magic_chips(o)
 end
 
 -- opts: match, i, t (strings), pending (delta not yet committed), on_change(delta), on_keypad(),
--- on_menu(), on_markers(), roll ({ value, winner } while drawing who starts).
+-- on_menu(), on_markers(), roll ({ value, winner } while drawing who starts), map (the table in
+-- miniature, for commander damage by seat) and on_commander().
 function Blocks.magic(o)
     return { draw = function(_, ctx)
         local bb, w, h = ctx.bb, ctx.w, ctx.h
@@ -62,11 +53,29 @@ function Blocks.magic(o)
         local plate_h = clamp(u * 0.12, s(26), s(34))
         local plate_face = Draw.face("bold", plate_h * 0.52)
         local name = p.name
-        local pw = math.min(Draw.text_width(name, plate_face) + plate_h * 1.6, w * 0.6)
         local px, py = m + s(14), m + s(14)
-        Draw.pill(bb, px, py, pw, plate_h, Draw.INK)
-        Draw.icon(bb, "heart", px + plate_h * 0.55, py + plate_h / 2, plate_h * 0.42, Draw.WHITE)
-        Draw.text(bb, name, plate_face, px + plate_h * 0.95, py, pw - plate_h * 1.2, plate_h, "left", Draw.WHITE)
+        local chip_h = clamp(u * 0.11, s(24), s(32))
+        local reserve = math.max(py + plate_h, m + s(14) + chip_h)
+        local cy = h / 2
+        -- Commander damage by seat, in the top right corner: the table as this player sees it. It takes the
+        -- larger of two free spaces, beside the life total (above the + mark, clear of a pending change)
+        -- or above it, measured with a two-digit total so it does not change size as life goes up and down.
+        local map_w, map_h = 0, 0
+        local show_map = o.map and match:rules().commander_damage and not p.out and not o.roll
+        if show_map then
+            local ref = math.min((h - 2 * reserve) * 0.82, w * 0.46)
+            local ref_w = Draw.text_width("88", Draw.face("serif", ref))
+            local right = w - m - s(14)
+            local most = clamp(u * 0.42, s(44), s(150))
+            local aw, ah = TableMap.fit(o.map, p.seat, right - (w / 2 + ref_w / 2 + ref * 0.62) - s(6), math.min(most, cy - ref * 0.11 - py - s(8)))
+            local bw2, bh2 = TableMap.fit(o.map, p.seat, w * 0.4, math.min(most, cy - ref * 0.45 - py - s(6)))
+            if aw * ah >= bw2 * bh2 then
+                map_w, map_h = aw, ah
+            else
+                map_w, map_h = bw2, bh2
+            end
+            show_map = map_h >= s(30)
+        end
         local badges = {}
         if match.states.monarch == i then
             badges[#badges + 1] = "crown"
@@ -74,12 +83,16 @@ function Blocks.magic(o)
         if match.states.initiative == i then
             badges[#badges + 1] = "star"
         end
+        local right = w - m - s(14) - (show_map and (map_w + s(10)) or 0)
+        local pw = math.max(plate_h * 2, math.min(Draw.text_width(name, plate_face) + plate_h * 1.6, w * 0.6, right - px))
+        Draw.pill(bb, px, py, pw, plate_h, Draw.INK)
+        Draw.icon(bb, "heart", px + plate_h * 0.55, py + plate_h / 2, plate_h * 0.42, Draw.WHITE)
+        Draw.text(bb, name, plate_face, px + plate_h * 0.95, py, pw - plate_h * 1.2, plate_h, "left", Draw.WHITE)
+        -- Under the name: the corner on the right holds the map, and the middle of a side block's top edge
+        -- is where the round menu button sits.
         for b, icon in ipairs(badges) do
-            Draw.icon(bb, icon, w - m - s(14) - plate_h * 0.5 - (b - 1) * plate_h * 1.1, py + plate_h / 2, plate_h * 0.9, Draw.BLACK)
+            Draw.icon(bb, icon, px + plate_h * 0.5 + (b - 1) * plate_h * 1.1, py + plate_h * 1.65, plate_h * 0.9, Draw.BLACK)
         end
-        local chip_h = clamp(u * 0.11, s(24), s(32))
-        local reserve = math.max(py + plate_h, m + s(14) + chip_h)
-        local cy = h / 2
         if o.roll then
             local size = math.min(h - 2 * reserve - s(16), w * 0.45)
             Draw.picture(bb, "art/d20.png", w / 2, cy, size, size)
@@ -160,6 +173,11 @@ function Blocks.magic(o)
         end
         ctx:hit(m, strip_y - s(4), w - 2 * m, chip_h + s(8), function() o.on_markers() end)
         ctx:hit(px - s(6), py - s(6), pw + s(12), plate_h + s(12), function() o.on_menu() end)
+        if show_map then
+            local mx = w - m - s(14) - map_w
+            TableMap.draw_small(bb, { map = o.map, seat = p.seat, match = match, i = i, x = mx, y = py, w = map_w, h = map_h })
+            ctx:hit(mx - s(6), py - s(6), map_w + s(12), map_h + s(12), function() o.on_commander() end)
+        end
     end }
 end
 

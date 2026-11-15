@@ -1,7 +1,7 @@
 return {
     fullname = "Matkeeper",
     description = [[A table counter for trading card games, made for e-ink: Magic life and counters, a Pokémon turn helper, dice, coins and a match clock, with every block facing its player. By Beater Studios.]],
-    version = "0.1.0",
+    version = "0.1.1",
     author = "Beater Studios",
     copyright = "Copyright (C) 2026 Beater Studios",
     website = "https://beaterstudios.com/",
