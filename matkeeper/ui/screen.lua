@@ -132,19 +132,33 @@ end
 -- The kind of what is on screen picks the mode: a new page or the table opening flash once, changes
 -- inside them do not, and a flash comes after PAGE_REFRESHES (pages) or TABLE_REFRESHES (table panes).
 -- Pages and the table count apart; moving from one to the other starts the count again.
-function Screen:refresh_mode()
+-- A flash due while a dialog is open (inside) waits for it to close, so the screen does not flash between
+-- the taps of a dialog; the change itself is refreshed without one.
+function Screen:refresh_mode(inside)
     local counter = self.kind == "table" and self.table_refresh or self.page_refresh
     if counter ~= self.last_counter then
         counter:reset()
         self.last_counter = counter
     end
-    return counter:mode(self.kind)
+    local mode = counter:mode(self.kind)
+    if inside then
+        if mode == "full" then
+            self.flash_due = true
+        end
+        return "ui"
+    end
+    if self.flash_due then
+        self.flash_due = nil
+        return "full"
+    end
+    return mode
 end
 
 -- The next refresh flashes, whatever is on screen: after waking up and after a milestone.
 function Screen:reset_refresh()
     self.page_refresh:reset()
     self.table_refresh:reset()
+    self.flash_due = nil
 end
 
 function Screen:page(view)
@@ -939,7 +953,25 @@ end
 
 function Screen:close_dialog()
     self.reopen_fn = nil
+    self.player_turn = nil
     self:close_modal()
+end
+
+-- Where the dialogs of player i (counters, the player menu, the life keypad) face: the player, until the
+-- rotate button turns them towards whoever is using them. The turn lasts until the dialog closes.
+function Screen:player_seat(i)
+    local turn = self.player_turn
+    if turn and turn.i == i then
+        return turn.seat
+    end
+    return self.match.players[i].seat
+end
+
+function Screen:turn_player_dialogs(i)
+    return function()
+        self.player_turn = { i = i, seat = Layouts.next_seat(self:player_seat(i)) }
+        self:reopen()
+    end
 end
 
 function Screen:open_menu(page)
@@ -1082,8 +1114,9 @@ function Screen:open_player_menu(i)
     if not p.out then
         rows[#rows + 1] = { label = t.concede, danger = true, on_tap = function() self:concede(i) end }
     end
-    self:open_modal(Dialogs.list{ title = p.name, rows = rows, buttons = { { text = t.close, style = "outline", on_tap = function() self:close_dialog() end } } },
-        p.seat, nil, function() self:open_player_menu(i) end)
+    self:open_modal(Dialogs.list{ title = p.name, rows = rows, on_rotate = self:turn_player_dialogs(i),
+        buttons = { { text = t.close, style = "outline", on_tap = function() self:close_dialog() end } } },
+        self:player_seat(i), nil, function() self:open_player_menu(i) end)
 end
 
 function Screen:concede(i)
@@ -1124,7 +1157,8 @@ function Screen:open_markers(i, page, tab)
         self:open_markers(i, page, tab)
     end
     if tab == "commander" then
-        rows[#rows + 1] = { kind = "map", map = self.table_map, seat = p.seat, match = match, i = i,
+        -- The map as whoever reads the dialog sees the table.
+        rows[#rows + 1] = { kind = "map", map = self.table_map, seat = self:player_seat(i), match = match, i = i,
             on_change = function(source, k, delta)
                 match:change_commander_damage(i, source, k, delta)
                 refresh()
@@ -1160,12 +1194,13 @@ function Screen:open_markers(i, page, tab)
     end
     self:open_modal(Dialogs.list{
         title = string.format(t.markers_title, p.name), rows = rows, page = page, tabs = tabs, columns = tab == "counters",
+        on_rotate = self:turn_player_dialogs(i),
         on_page = function(pg) self:open_markers(i, pg, tab) end,
         buttons = { { text = t.close, style = "filled", on_tap = function()
             self:close_dialog()
             self:check_defeats()
         end } },
-    }, p.seat, function()
+    }, self:player_seat(i), function()
         self:close_dialog()
         self:check_defeats()
     end, function() self:open_markers(i, page, tab) end)
@@ -1183,7 +1218,7 @@ function Screen:open_keypad(i)
         self:open_keypad(i)
     end
     self:open_modal(Dialogs.keypad{
-        t = self.t, name = p.name, state = state,
+        t = self.t, name = p.name, state = state, on_rotate = self:turn_player_dialogs(i),
         on_digit = function(d)
             if #state.digits < 4 then
                 state.digits = state.digits .. d
@@ -1213,7 +1248,7 @@ function Screen:open_keypad(i)
             self:update_block(i)
             self:check_defeats()
         end,
-    }, p.seat, function()
+    }, self:player_seat(i), function()
         self.keypad = nil
         self:close_dialog()
     end, again)

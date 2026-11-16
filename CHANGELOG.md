@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.2]
+
+- Fast taps on the commander map no longer close it: a tap that arrives before the screen was redrawn now counts where it was aimed.
+- A player's counters, menu and life keypad have the rotate button too, so someone across the table can turn them. They face the player again once closed.
+- A tap inside a dialog redraws only what changed, such as the number tapped, instead of the whole screen, and never flashes between taps: the flash that clears the e-ink ghosting comes when the dialog closes. The table behind a dialog is redrawn when it closes.
+
 ## [0.1.1]
 
 - Commander damage by seat: each Magic block shows the table in miniature, as its player sees it, with the damage from each opponent's commander in that opponent's seat, instead of pills with names ("Player 1 3"). With partners, the block shows the higher of the two. Tap it to open the large map, where each opponent takes or gives damage by halves, as life does.

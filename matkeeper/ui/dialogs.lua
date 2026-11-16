@@ -312,7 +312,7 @@ function Dialogs.list(spec)
     end }
 end
 
--- The life keypad. state: { digits = "" }. opts: t, name, on_digit(d), on_back(), on_apply(mode).
+-- The life keypad. state: { digits = "" }. opts: t, name, on_digit(d), on_back(), on_apply(mode), on_rotate.
 function Dialogs.keypad(o)
     return { draw = function(_, ctx)
         local bb, t = ctx.bb, o.t
@@ -324,6 +324,7 @@ function Dialogs.keypad(o)
             bh = s(40) + s(24) + s(70) + 4 * (key_h + s(10)) + s(80) + s(24)
         end
         local x0, y0 = Dialogs.frame(ctx, bw, bh)
+        rotate_button(ctx, o.on_rotate)
         local y = title(ctx, x0, y0 + s(16), bw, string.format(t.life_title, o.name)) + s(4)
         Draw.rect(bb, x0 + s(30), y, bw - s(60), s(58), Draw.PAPER, s(12))
         local shown = o.state.digits ~= "" and o.state.digits or "0"

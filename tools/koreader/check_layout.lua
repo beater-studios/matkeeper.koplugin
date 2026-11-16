@@ -289,6 +289,8 @@ for i = 1, 4 do
     end
     local plus, minus = 0, 0
     for _, hit in ipairs(hits) do
+        -- Closing first brings the dialog back to its player, in case the last tap was the rotate button.
+        screen:close_dialog()
         screen:open_markers(i, 1, "commander")
         UIManager:forceRePaint()
         local partners = screen.match.players[i].commanders
@@ -308,6 +310,155 @@ for i = 1, 4 do
     if plus ~= expected or minus ~= expected then
         problem(string.format("commander map of player %d: %d parts give and %d take, expected %d", i, plus, minus, expected))
     end
+end
+
+-- Fast taps: KOReader handles a batch of queued touches before painting, so the second tap of a batch
+-- reaches a dialog the first one reopened and that was never painted. It must count, not close the dialog.
+start(screen, "magic", "commander", 4, "r:p.pp.p", false)
+screen:open_markers(4, 1, "commander")
+UIManager:forceRePaint()
+do
+    local plus
+    for _, hit in ipairs(screen.modal.hits) do
+        if hit.tap and hit.hold then
+            plus = hit
+        end
+    end
+    local function sum()
+        local total = 0
+        for j = 1, 3 do
+            total = total + screen.match:commander_damage(4, j, 1)
+        end
+        return total
+    end
+    local x, y = Layouts.from_local(screen.modal.seat, screen.modal.w, screen.modal.h, plus.x + plus.w / 2, plus.y + plus.h / 2)
+    screen:onTap(nil, { pos = Geom:new{ x = x, y = y } })
+    screen:onTap(nil, { pos = Geom:new{ x = x, y = y } })
+    if not screen.modal or sum() ~= 2 then
+        problem(string.format("two fast taps on the commander map: damage %d, dialog %s", sum(), screen.modal and "open" or "closed"))
+    end
+    screen:close_dialog()
+end
+
+-- Taps inside a dialog refresh only what changed: the number of the cell, a counter row, the keypad
+-- digits, and nothing behind the dialog. A flash due meanwhile waits for the dialog to close.
+do
+    local real_refresh = UIManager._refresh
+    local sent = {}
+    UIManager._refresh = function(self, mode, region, ...)
+        sent[#sent + 1] = { mode = mode, area = region and region.w * region.h or W * H }
+        return real_refresh(self, mode, region, ...)
+    end
+    local function tap_hit(hit)
+        local x, y = Layouts.from_local(screen.modal.seat, screen.modal.w, screen.modal.h, hit.x + hit.w / 2, hit.y + hit.h / 2)
+        screen:onTap(nil, { pos = Geom:new{ x = x, y = y } })
+        UIManager:forceRePaint()
+    end
+    -- hit_of finds, in a painted dialog, the touch area to tap again and again.
+    local function check_taps(label, open, hit_of, taps)
+        open()
+        UIManager:forceRePaint()
+        local hit = hit_of(screen.modal.hits)
+        sent = {}
+        for _ = 1, taps do
+            tap_hit(hit)
+        end
+        for n, entry in ipairs(sent) do
+            if entry.mode == "full" or entry.area > W * H / 10 then
+                problem(string.format("%s: tap %d refreshed %s on %d of %d pixels", label, n, entry.mode, entry.area, W * H))
+                break
+            end
+        end
+        sent = {}
+        screen:close_dialog()
+        UIManager:forceRePaint()
+        return sent[1] and sent[1].mode
+    end
+    local function last_with(predicate)
+        return function(hits)
+            local found
+            for _, hit in ipairs(hits) do
+                if predicate(hit) then
+                    found = hit
+                end
+            end
+            return found
+        end
+    end
+    start(screen, "magic", "commander", 4, "r:p.pp.p", false)
+    local closing = check_taps("commander map", function() screen:open_markers(4, 1, "commander") end,
+        last_with(function(hit) return hit.tap and hit.hold end), 40)
+    if closing ~= "full" then
+        problem("40 taps in a dialog: the flash due did not come when it closed (" .. tostring(closing) .. ")")
+    end
+    check_taps("counter row", function() screen:open_markers(4, 1, "counters") end,
+        last_with(function(hit) return hit.tap and hit.hold and hit.w < W / 4 end), 12)
+    check_taps("life keypad", function() screen:open_keypad(4) end,
+        last_with(function(hit) return hit.tap and not hit.hold and hit.h > Draw.s(40) and hit.w < W / 3 end), 3)
+    UIManager._refresh = real_refresh
+end
+
+-- A player's own dialogs turn with the rotate button, from every seat: the button stays clear of the box,
+-- four turns come back to the player, and closing the dialog brings the next one back to the player.
+local function rotate_point()
+    return W - Draw.s(40), Draw.s(40)
+end
+local function check_player_dialog(label, i, open)
+    open()
+    UIManager:forceRePaint()
+    local owner = screen.match.players[i].seat
+    local modal = screen.modal
+    if not modal or modal.seat ~= owner then
+        problem(label .. ": does not face its player")
+        screen:close_dialog()
+        return
+    end
+    local box = modal.hits[1]
+    local bx, by = Layouts.to_local(modal.seat, modal.w, modal.h, rotate_point())
+    local r = Draw.s(26)
+    if bx + r > box.x and bx - r < box.x + box.w and by + r > box.y and by - r < box.y + box.h then
+        problem(label .. ": the rotate button overlaps the box")
+    end
+    local seat = owner
+    for turn = 1, 4 do
+        local x, y = rotate_point()
+        screen:onTap(nil, { pos = Geom:new{ x = x, y = y } })
+        UIManager:forceRePaint()
+        seat = Layouts.next_seat(seat)
+        if not screen.modal or screen.modal.seat ~= seat then
+            problem(string.format("%s: turn %d did not face %s", label, turn, seat))
+            break
+        end
+    end
+    screen:close_dialog()
+    open()
+    if not screen.modal or screen.modal.seat ~= owner then
+        problem(label .. ": after closing, does not face its player again")
+    end
+    screen:close_dialog()
+end
+for _, case in ipairs({
+    { "commander", 4, "r:p.pp.p", false },
+    { "commander", 6, "r:pp.pp.pp", true },
+}) do
+    start(screen, "magic", case[1], case[2], case[3], false)
+    if case[4] then
+        for i = 1, case[2] do
+            screen.match:set_partners(i, true)
+        end
+    end
+    for i = 1, case[2] do
+        local where = string.format("%d players, player %d", case[2], i)
+        check_player_dialog("counters, " .. where, i, function() screen:open_markers(i, 1, "counters") end)
+        check_player_dialog("commander, " .. where, i, function() screen:open_markers(i, 1, "commander") end)
+        check_player_dialog("player menu, " .. where, i, function() screen:open_player_menu(i) end)
+        check_player_dialog("life keypad, " .. where, i, function() screen:open_keypad(i) end)
+    end
+end
+-- In Pokémon the player menu is a player's only dialog, on a table of two face to face.
+start(screen, "pokemon", "standard", 2, Layouts.BAR, false)
+for i = 1, 2 do
+    check_player_dialog("Pokemon player menu, player " .. i, i, function() screen:open_player_menu(i) end)
 end
 
 -- A match in progress comes back in a new screen, with the same life totals.
@@ -384,8 +535,10 @@ end
 -- Each change refreshes two panes, so 31 changes are 62 refreshes: a flash after each 30.
 expect("flashes in 31 table changes", tostring(flashes), "2")
 expect("dialog", sequence(function() old:open_dice() end), "ui")
-expect("clock tick", sequence(function() old:tick() end):gsub(",.*", ""), "ui")
+-- Behind a dialog the clock is covered: it is drawn again when the dialog closes.
+expect("clock tick behind a dialog", sequence(function() old:tick() end), "")
 old:close_dialog()
+expect("clock tick", sequence(function() old:tick() end):gsub(",.*", ""), "ui")
 expect("after waking up", sequence(function() old:reset_refresh(); old:update_table() end), "full")
 UIManager.setDirty = real_set_dirty
 
