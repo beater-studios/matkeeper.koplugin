@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/brand/banner.png" alt="Matkeeper: um contador de mesa para jogos de cartas colecionáveis">
+  <img src="docs/brand/banner_pt.png" alt="Matkeeper: um contador de mesa para jogos de cartas colecionáveis">
 </p>
 
 <p align="center">
